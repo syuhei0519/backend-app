@@ -1,0 +1,577 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "service",
+    "sourceProjectId",
+    "sourceCommit",
+    "buildPipelineId",
+    "buildJobId",
+    "imageRepository",
+    "imageTag",
+    "imageDigest",
+    "scanPipelineId",
+    "scanJobId",
+    "scanJobStatus",
+    "inputKind",
+    "inputArchiveSha256",
+    "trivyVersion",
+    "database",
+    "scannedAt",
+    "policyRevision",
+    "policySha256",
+    "exceptions",
+    "decision",
+    "failureReason",
+    "sbom",
+    "sbomFailureReason",
+    "scanReport"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "service": {
+      "type": "string",
+      "enum": [
+        "frontend",
+        "backend"
+      ]
+    },
+    "sourceProjectId": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "sourceCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "buildPipelineId": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "buildJobId": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "imageRepository": {
+      "type": "string"
+    },
+    "imageTag": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "imageDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "scanPipelineId": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "scanJobId": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "scanJobStatus": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failed"
+      ]
+    },
+    "inputKind": {
+      "type": "string",
+      "enum": [
+        "build-oci",
+        "registry-retrieval"
+      ]
+    },
+    "inputArchiveSha256": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{64})?$"
+    },
+    "trivyVersion": {
+      "const": "0.75.0"
+    },
+    "database": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "updatedAt",
+            "metadataSha256"
+          ],
+          "properties": {
+            "version": {
+              "const": 2
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "metadataSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "scannedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "policyRevision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "policySha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "rule",
+          "package",
+          "path",
+          "createdAt",
+          "expiresAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9@._/+:-]{1,240}$"
+          },
+          "rule": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9@._/+:-]{1,240}$"
+          },
+          "package": {
+            "type": "string",
+            "pattern": "^([A-Za-z0-9@._/+:-]{1,240})?$"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9@._/+-]{1,240}$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "indeterminate"
+      ]
+    },
+    "failureReason": {
+      "type": "string",
+      "enum": [
+        "",
+        "scanner-unavailable",
+        "db-unavailable",
+        "db-expired",
+        "policy-rejected",
+        "sbom-unavailable",
+        "sbom-invalid",
+        "input-unavailable",
+        "build-unproven"
+      ]
+    },
+    "sbom": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "imageDigest",
+            "scanPipelineId",
+            "scanJobId",
+            "url",
+            "sha256",
+            "format",
+            "schemaVersion"
+          ],
+          "properties": {
+            "imageDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "scanPipelineId": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "scanJobId": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https://gitlab\\.com/api/v4/projects/(86247025|86247033)/packages/generic/core-platform-(frontend|backend)/sha256-[0-9a-f]{64}/(release-record-[1-9][0-9]*-[1-9][0-9]*\\.json|sbom-[1-9][0-9]*-[1-9][0-9]*\\.cdx\\.json|scan-report-[1-9][0-9]*-[1-9][0-9]*\\.json)$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "format": {
+              "const": "CycloneDX"
+            },
+            "schemaVersion": {
+              "type": "string",
+              "enum": [
+                "1.5",
+                "1.6",
+                "1.7"
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sbomFailureReason": {
+      "type": "string",
+      "enum": [
+        "",
+        "scanner-unavailable",
+        "db-unavailable",
+        "db-expired",
+        "policy-rejected",
+        "sbom-unavailable",
+        "sbom-invalid",
+        "input-unavailable",
+        "build-unproven"
+      ]
+    },
+    "scanReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "imageDigest",
+        "scanPipelineId",
+        "scanJobId",
+        "url",
+        "sha256",
+        "format",
+        "schemaVersion"
+      ],
+      "properties": {
+        "imageDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "scanPipelineId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scanJobId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://gitlab\\.com/api/v4/projects/(86247025|86247033)/packages/generic/core-platform-(frontend|backend)/sha256-[0-9a-f]{64}/(release-record-[1-9][0-9]*-[1-9][0-9]*\\.json|sbom-[1-9][0-9]*-[1-9][0-9]*\\.cdx\\.json|scan-report-[1-9][0-9]*-[1-9][0-9]*\\.json)$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format": {
+          "const": "safe-json"
+        },
+        "schemaVersion": {
+          "const": "1"
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Core Platform release-record v2",
+  "description": "Structure contract. DecodeRecord/ValidateStored/Adopt also enforce exact URL/run/project bindings, timestamps, exception expiry and successful-run adoption. Unknown build IDs=0 and unknown input checksum=\"\" are explicit failed evidence only; not deployment authority.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "buildPipelineId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "buildJobId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "inputArchiveSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "scanJobStatus": {
+            "const": "success"
+          },
+          "database": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "updatedAt",
+              "metadataSha256"
+            ],
+            "properties": {
+              "version": {
+                "const": 2
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "metadataSha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          },
+          "sbom": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "imageDigest",
+              "scanPipelineId",
+              "scanJobId",
+              "url",
+              "sha256",
+              "format",
+              "schemaVersion"
+            ],
+            "properties": {
+              "imageDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "scanPipelineId": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "scanJobId": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "url": {
+                "type": "string",
+                "pattern": "^https://gitlab\\.com/api/v4/projects/(86247025|86247033)/packages/generic/core-platform-(frontend|backend)/sha256-[0-9a-f]{64}/(release-record-[1-9][0-9]*-[1-9][0-9]*\\.json|sbom-[1-9][0-9]*-[1-9][0-9]*\\.cdx\\.json|scan-report-[1-9][0-9]*-[1-9][0-9]*\\.json)$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "format": {
+                "const": "CycloneDX"
+              },
+              "schemaVersion": {
+                "type": "string",
+                "enum": [
+                  "1.5",
+                  "1.6",
+                  "1.7"
+                ]
+              }
+            }
+          },
+          "failureReason": {
+            "const": ""
+          },
+          "sbomFailureReason": {
+            "const": ""
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "scanJobStatus": {
+            "const": "failed"
+          },
+          "failureReason": {
+            "type": "string",
+            "enum": [
+              "scanner-unavailable",
+              "db-unavailable",
+              "db-expired",
+              "policy-rejected",
+              "sbom-unavailable",
+              "sbom-invalid",
+              "input-unavailable",
+              "build-unproven"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "buildPipelineId": {
+            "const": 0
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "buildJobId": {
+            "const": 0
+          },
+          "failureReason": {
+            "type": "string",
+            "enum": [
+              "build-unproven",
+              "input-unavailable"
+            ]
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "indeterminate"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "buildJobId": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "inputArchiveSha256": {
+            "const": ""
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "failureReason": {
+            "const": "input-unavailable"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "indeterminate"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "sbom": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sbomFailureReason": {
+            "type": "string",
+            "enum": [
+              "scanner-unavailable",
+              "db-unavailable",
+              "db-expired",
+              "policy-rejected",
+              "sbom-unavailable",
+              "sbom-invalid",
+              "input-unavailable",
+              "build-unproven"
+            ]
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "indeterminate"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "service": {
+            "const": "frontend"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sourceProjectId": {
+            "const": 86247025
+          },
+          "imageRepository": {
+            "const": "registry.gitlab.com/syuhei-platform-engineering-lab/frontend-app"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "sourceProjectId": {
+            "const": 86247033
+          },
+          "imageRepository": {
+            "const": "registry.gitlab.com/syuhei-platform-engineering-lab/backend-app"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "sbom": {
+            "type": "object"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sbomFailureReason": {
+            "const": ""
+          }
+        }
+      }
+    }
+  ]
+}

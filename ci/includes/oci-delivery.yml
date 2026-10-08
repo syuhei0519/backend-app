@@ -1,0 +1,111 @@
+# 保護mainの検査済みOCI公開→公開後照合→manifest MR提案。.gitlab-ci.ymlがincludeする。
+# ci/publish-oci.shとci/manifest-update.goが副作用を担当し、manifest側が独立に採否を検証する。
+# Protected main OCI delivery; registry reinspection remains explicit API-only.
+# scan・record保存・互換性/runtimeのneeds成功が前提。image-publishの直列化は同project内に限る。
+# 公開後の資源判定に失敗してもregistryへの書込は戻せないため、下流はjob成功を必須とする。
+publish-oci:
+  interruptible: false
+  stage: propose
+  image:
+    name: gcr.io/go-containerregistry/crane/debug:v0.21.7@sha256:54b27703e6c602fbd6f95712910e9c8d45d4361a59274bde38aeec943734e424
+    entrypoint: [""]
+  needs:
+    - job: container-build-oci
+      artifacts: true
+      optional: true
+    - job: oci-image-policy-validation
+      artifacts: true
+      optional: true
+    - job: release-record-store
+      artifacts: true
+    - job: oci-format-compatibility
+      artifacts: false
+      optional: true
+    - job: oci-isolated-runtime
+      artifacts: false
+      optional: true
+    - job: registry-format-inspection
+      artifacts: false
+      optional: true
+    - job: registry-runtime-inspection
+      artifacts: false
+      optional: true
+    - job: security-policy-test
+      artifacts: true
+  resource_group: image-publish
+  environment:
+    name: release-evidence
+    action: prepare
+  timeout: 5 minutes
+  rules:
+    - if: '$OCI_ROLLBACK_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$PHASE2_DELIVERY_ENABLED == "true" && $OCI_REGISTRY_RETRIEVAL_ENABLED == "true" && $OCI_REGISTRY_INSPECTION_ENABLED == "true" && $OCI_DELIVERY_VALIDATION_ENABLED != "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $RELEASE_RECORD_STORE_ENABLED == "true" && $AT17_RESCAN_ACCEPTANCE_ENABLED != "true" && $AT12_PACKAGE_CONTRACT != "true" && $AT16_MISSING_INPUT != "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "api"'
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$PHASE2_DELIVERY_ENABLED == "true" && $OCI_DELIVERY_VALIDATION_ENABLED == "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $RELEASE_RECORD_STORE_ENABLED == "true" && $AT17_RESCAN_ACCEPTANCE_ENABLED != "true" && $AT12_PACKAGE_CONTRACT != "true" && $AT16_MISSING_INPUT != "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && ($CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web")'
+  script: ["sh ci/run-oci-publication.sh"]
+  artifacts:
+    when: always
+    expire_in: 90 days
+    reports: {dotenv: image.env}
+    paths: [image.env, .oci-publish/public/, .oci-budget-publish/public/]
+
+# 公開成功だけで提案しない。record/scan/SBOM/native jobとregistry identityを再照合してdotenvを出す。
+verify-oci-release:
+  interruptible: false
+  stage: propose
+  image: golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b
+  needs:
+    - job: publish-oci
+      artifacts: false
+    - job: release-record-store
+      artifacts: true
+    - job: security-policy-test
+      artifacts: true
+  environment:
+    name: release-evidence
+    action: prepare
+  variables: {HOME: /tmp, GOCACHE: /tmp/go-build, GOPATH: /tmp/go}
+  rules:
+    - if: '$OCI_ROLLBACK_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$PHASE2_DELIVERY_ENABLED == "true" && $OCI_REGISTRY_RETRIEVAL_ENABLED == "true" && $OCI_REGISTRY_INSPECTION_ENABLED == "true" && $OCI_DELIVERY_VALIDATION_ENABLED != "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $RELEASE_RECORD_STORE_ENABLED == "true" && $AT17_RESCAN_ACCEPTANCE_ENABLED != "true" && $AT12_PACKAGE_CONTRACT != "true" && $AT16_MISSING_INPUT != "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "api"'
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$PHASE2_DELIVERY_ENABLED == "true" && $OCI_DELIVERY_VALIDATION_ENABLED == "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $RELEASE_RECORD_STORE_ENABLED == "true" && $AT17_RESCAN_ACCEPTANCE_ENABLED != "true" && $AT12_PACKAGE_CONTRACT != "true" && $AT16_MISSING_INPUT != "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && ($CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web")'
+  script: [.security/delivery-check]
+  artifacts:
+    when: always
+    expire_in: 90 days
+    reports: {dotenv: .delivery/public/image.env}
+    paths: [.delivery/public/]
+
+# 検証済みdotenvだけを受け取り提案する。resource_groupは提案競合を抑えるが、mainの競合検知も別途必要。
+# 提案botの保護変数はmanifest-proposalへ限定する運用。MR作成とmerge許可は別。
+propose-oci-manifest-update:
+  interruptible: false
+  stage: propose
+  image: golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b
+  needs:
+    - job: verify-oci-release
+      artifacts: true
+  resource_group: manifest-proposal
+  environment:
+    name: manifest-proposal
+    action: prepare
+  variables:
+    SERVICE: backend
+    MANIFEST_PROJECT: syuhei-platform-engineering-lab/application-manifest
+    PHASE2_PROPOSAL_ENABLED: 'true'
+    HOME: /tmp
+    GOCACHE: /tmp/go-build
+    GOPATH: /tmp/go
+  rules:
+    - if: '$OCI_ROLLBACK_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$PHASE2_DELIVERY_ENABLED == "true" && $OCI_REGISTRY_RETRIEVAL_ENABLED == "true" && $OCI_REGISTRY_INSPECTION_ENABLED == "true" && $OCI_DELIVERY_VALIDATION_ENABLED != "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $RELEASE_RECORD_STORE_ENABLED == "true" && $AT17_RESCAN_ACCEPTANCE_ENABLED != "true" && $AT12_PACKAGE_CONTRACT != "true" && $AT16_MISSING_INPUT != "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "api"'
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$PHASE2_DELIVERY_ENABLED == "true" && $OCI_DELIVERY_VALIDATION_ENABLED == "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $RELEASE_RECORD_STORE_ENABLED == "true" && $AT17_RESCAN_ACCEPTANCE_ENABLED != "true" && $AT12_PACKAGE_CONTRACT != "true" && $AT16_MISSING_INPUT != "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && ($CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web")'
+  script: ["sh ci/propose-manifest-update.sh"]

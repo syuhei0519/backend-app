@@ -1,0 +1,5 @@
+# PE018B Registry再取得の中間準備
+
+既定falseの保護main明示API-only image-scanは、元buildの実API/job/metadataと固定repository/source/digestを照合してOCIを再取得する。取得先/認証scope/固定CDNへの転送/容量/OCIconfigを検証し、実新archiveを現在policy・実DB・今回scan/SBOM/失敗recordへ結合する。原本buildは維持し、旧画像の過去scan/SBOM成功を捏造しない。取得失敗は未証明buildを埋めず採用不可。
+
+backendで受入済みの厳密SBOM/空version拒否・固定category診断・sampler再試行は維持する。通常配信は維持し、Registry実取得/最新DB/Packageの実受入は未完。今回準備のpublisherは再取得時非選択、consumer/proposal/rollback/全面切替は後続。PE018B完了ではない。

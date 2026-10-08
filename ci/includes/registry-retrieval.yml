@@ -1,0 +1,88 @@
+# 既存digestの再取得・再検査CI。通常buildと異なりAPIで明示された保護main経路のみ。
+# registryの古いbuild identityを保持し、今回scan jobをbuild jobとして偽装しない。ci/retrieve-and-scan-oci.shへつながる。
+# Opt-in protected-main retrieval experiment. No registry write or proposal.
+image-scan:
+  interruptible: false
+  stage: verify
+  image:
+    name: aquasec/trivy:0.75.0@sha256:9db099105405c648166e6b94155eb32f8da12673cf1f455207f7385cc9a77283
+    entrypoint: [""]
+  needs:
+    - job: security-policy-test
+      artifacts: true
+    - job: source-scan
+      artifacts: false
+  environment:
+    name: release-evidence
+    action: prepare
+  resource_group: oci-validation
+  timeout: 15 minutes
+  cache:
+    key: trivy-0.75.0-db-v2-$CI_COMMIT_REF_PROTECTED
+    paths: [.cache/trivy/db/]
+    policy: pull-push
+    unprotect: false
+  rules:
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $OCI_DELIVERY_VALIDATION_ENABLED != "true" && $AT17_RESCAN_ACCEPTANCE_ENABLED != "true" && $AT12_PACKAGE_CONTRACT != "true" && $AT16_MISSING_INPUT != "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "api"'
+  script: ["sh ci/run-image-scan.sh"]
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 90 days
+    paths: [.image-policy/public/, .oci-budget-format/public/]
+
+# Separate native jobs re-read the immutable registry digest and must reproduce
+# the exact scanned archive hash. Private OCI bytes are never exported here.
+# format/runtimeを別のnative jobで再確認する共通設定。成功したscanとwriterの実ジョブに結合する。
+# artifacts:falseは依存の成功を待つがファイルは取得しない指定。private OCIを公開証跡へ含めない。
+.registry-inspection:
+  interruptible: false
+  stage: propose
+  needs:
+    - job: security-policy-test
+      artifacts: true
+    - job: source-scan
+      artifacts: false
+    - job: image-scan
+      artifacts: false
+    - job: release-record-store
+      artifacts: true
+  environment:
+    name: release-evidence
+    action: prepare
+  resource_group: oci-validation
+  rules:
+    - if: '$RELEASE_RECORD_STORE_ENABLED == "true" && $OCI_REGISTRY_INSPECTION_ENABLED == "true" && $OCI_REGISTRY_RETRIEVAL_ENABLED == "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $OCI_DELIVERY_VALIDATION_ENABLED != "true" && $AT17_RESCAN_ACCEPTANCE_ENABLED != "true" && $AT12_PACKAGE_CONTRACT != "true" && $AT16_MISSING_INPUT != "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "api"'
+
+registry-format-inspection:
+  extends: .registry-inspection
+  timeout: 15 minutes
+  image:
+    name: aquasec/trivy:0.75.0@sha256:9db099105405c648166e6b94155eb32f8da12673cf1f455207f7385cc9a77283
+    entrypoint: [""]
+  cache:
+    key: trivy-0.75.0-db-v2-$CI_COMMIT_REF_PROTECTED
+    paths: [.cache/trivy/db/]
+    policy: pull-push
+    unprotect: false
+  script: ["sh ci/run-registry-inspection.sh format"]
+  artifacts:
+    when: always
+    access: all
+    expire_in: 90 days
+    paths: [.oci-compatibility/public/, .oci-budget-format/public/]
+
+registry-runtime-inspection:
+  extends: .registry-inspection
+  timeout: 5 minutes
+  image:
+    name: moby/buildkit:v0.30.0-rootless@sha256:d76eb1caecac5733ef7553c1e90a1b21f1bb218cd1142d3553de0747b4a14ba9
+    entrypoint: [""]
+  variables:
+    BUILDKITD_FLAGS: --oci-worker-snapshotter=native --oci-worker-no-process-sandbox
+  script: ["sh ci/run-registry-inspection.sh runtime"]
+  artifacts:
+    when: always
+    access: all
+    expire_in: 90 days
+    paths: [.oci-runtime/public/, .oci-budget-runtime/public/]

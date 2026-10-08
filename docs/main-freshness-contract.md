@@ -1,0 +1,7 @@
+# PE-004 source mainと配備提案の鮮度
+
+配備提案はsource protected mainの完全SHA、成功pipeline/publish artifact、immutable registry digestとOCI revision/sourceを結び付ける。最新source mainが進んだら古い提案をそのままmergeせず、最新mainの公開結果から再提案する。設定だけのMRも、検証開始時とmerge直前のsource main変化を検出して固定mainのrender/consumerをやり直す。
+
+由来readerはread_apiだけ、registry readerはread_registryだけ。提案botはapplication-manifestのsource branch/MRを作り、mainへ直接push/mergeしない。Ownerがmanifestのci/pre-merge-check.shでMR source/manifest target/両app mainを確認し、source SHA指定Merge APIと成立後candidate tree照合を行う。API shaはtarget CASではないため、最後の確認から成立までの残存競合を記録する。
+
+この文書のsource main統合によるSHA更新はAT-02の実app-main鮮度試験にも使用し、旧verified receiptの拒否と最新公開からの再検証を証跡へ残す。アプリ動作・migration・DB schemaは変更しない。

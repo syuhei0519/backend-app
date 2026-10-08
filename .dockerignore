@@ -1,0 +1,13 @@
+.git
+*.exe
+*.out
+.env*
+# CI outputs are not source inputs. Exclude compiler/cache/security artifacts
+# and the OCI export itself from every intermediate BuildKit COPY snapshot.
+.cache/
+.build/
+.security/
+.oci/
+.oci-*/
+.validation/
+__pycache__/

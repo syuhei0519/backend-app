@@ -1,0 +1,9 @@
+/server.exe
+*.out
+.cache/
+.build/
+.security/
+.validation/
+.oci/
+.oci-budget-*/
+__pycache__/

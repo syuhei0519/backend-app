@@ -1,0 +1,43 @@
+# 通常CIのjob定義。入口は.gitlab-ci.yml。既存のrules/needs/成果物契約を一括で維持する。
+include:
+  - local: ci/includes/security.yml
+  - local: ci/includes/oci-validation.yml
+  - local: ci/includes/oci-delivery.yml
+  - local: ci/includes/registry-retrieval.yml
+
+.go-validation:
+  image: golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b
+  cache:
+    key:
+      prefix: go-1.27.1-linux-amd64-$CI_COMMIT_REF_PROTECTED
+      files: [go.sum, ci/tool-versions.env]
+    paths: [.cache/go/pkg/mod/, .cache/go-build/]
+    policy: pull-push
+    unprotect: false
+
+manifest-helper-test:
+  extends: .go-validation
+  stage: validate
+  script:
+    - go test -v ci/manifest-update.go ci/manifest-update_test.go
+    - 'if [ "${AT13_FORCE_VALIDATION_FAILURE:-false}" = "true" ]; then echo "AT13 expected validation failure; delivery must remain skipped"; exit 99; fi'
+
+format-and-vet:
+  extends: .go-validation
+  stage: validate
+  script:
+    - test -z "$(gofmt -l .)"
+    - go vet ./...
+
+unit-test:
+  extends: .go-validation
+  stage: validate
+  script: ['go test -v ./...']
+
+backend-build:
+  extends: .go-validation
+  stage: validate
+  script: ['go build -o .build/server ./cmd/server']
+  artifacts:
+    expire_in: 1 day
+    paths: [.build/server]

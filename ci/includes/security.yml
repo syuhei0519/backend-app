@@ -1,0 +1,80 @@
+# 検証器をソースからbuildしてartifact化し、source-scanへ渡すCI。
+# policyはsecurity/scan-policy.json、判定実装はtools/scan-gate/policy.go。CI includeは.gitlab-ci.ymlから読む。
+security-policy-test:
+  stage: validate
+  image: golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b
+  variables: {GOCACHE: /tmp/go-build, GOPATH: /tmp/go}
+  script:
+    - sh ci/test-docs-check.sh
+    - sh ci/test-oci-budget.sh
+    - cd tools/scan-gate
+    - go test -v ./...
+    - mkdir -p ../../.security
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/scan-gate .
+    - cd ../release-record
+    - go test -v ./...
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/record-check ./cmd/record-check
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/package-contract ./cmd/package-contract
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/sbom-check ./cmd/sbom-check
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/scan-record ./cmd/scan-record
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/record-store ./cmd/record-store
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/publication-check ./cmd/publication-check
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/delivery-check ./cmd/delivery-check
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/registry-reuse-check ./cmd/registry-reuse-check
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/registry-origin ./cmd/registry-origin
+    - cd ../..
+    - sh ci/test-image-scan-finalizer.sh
+    - sh ci/test-oci-publication.sh
+    - sh ci/test-oci-reuse.sh
+    - sh ci/test-registry-runtime-handoff.sh
+    - cd tools/release-record
+    - cd ../oci-input
+    - go test -v ./...
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/oci-check ./cmd/oci-check
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/oci-crane-check ./cmd/oci-crane-check
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/oci-compat-proof ./cmd/compat-proof
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/oci-registry-pull ./cmd/oci-registry-pull
+    - CGO_ENABLED=0 go build -trimpath -o ../../.security/oci-tag-state ./cmd/oci-tag-state
+  artifacts:
+    expire_in: 1 day
+    paths: [.security/scan-gate, .security/record-check, .security/package-contract, .security/sbom-check, .security/scan-record, .security/record-store, .security/publication-check, .security/delivery-check, .security/registry-reuse-check, .security/registry-origin, .security/oci-check, .security/oci-crane-check, .security/oci-compat-proof, .security/oci-registry-pull, .security/oci-tag-state]
+
+# 運用者が明示起動する保護mainの権限fixture。image releaseではない。
+package-storage-contract:
+  stage: propose
+  image: golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b
+  needs:
+    - job: security-policy-test
+      artifacts: true
+    - job: source-scan
+      artifacts: false
+  interruptible: false
+  resource_group: evidence-writer
+  rules:
+    - if: '$AT12_PACKAGE_CONTRACT == "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && ($CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web")'
+  script: [.security/package-contract]
+  artifacts:
+    expire_in: 90 days
+    paths: [.security/public/package-contract.json]
+
+# source検査は開発依存を含むFSが対象。runtimeイメージ検査・SBOMと範囲が違う。
+# artifacts:when:alwaysは失敗理由も保存する指定であり、allow_failureではない。cacheは保護/未保護refで分ける。
+source-scan:
+  stage: security
+  image:
+    name: aquasec/trivy:0.75.0@sha256:9db099105405c648166e6b94155eb32f8da12673cf1f455207f7385cc9a77283
+    entrypoint: [""]
+  needs:
+    - job: security-policy-test
+      artifacts: true
+  variables: {SECURITY_RENDER_REQUIRED: "false"}
+  cache:
+    key: trivy-0.75.0-db-v2-$CI_COMMIT_REF_PROTECTED
+    paths: [.cache/trivy/db/]
+    policy: pull-push
+    unprotect: false
+  script: ["sh ci/source-scan.sh"]
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths: [.security/public/]

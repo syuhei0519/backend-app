@@ -1,0 +1,30 @@
+{
+  "blobUploadStatus": 201,
+  "job": "16885612284",
+  "project": "86247033",
+  "proposalCredentialPresent": false,
+  "protected": "false",
+  "registryAuthStatus": 200,
+  "schema": "core-platform/at13-permissions/v1",
+  "sourceSha": "e43670a01e79b404081bbd1dae49f3240cdf1192",
+  "writes": [
+    {
+      "allowed": true,
+      "kind": "sha-tag",
+      "status": 201,
+      "target": "e43670a01e79b404081bbd1dae49f3240cdf1192"
+    },
+    {
+      "allowed": true,
+      "kind": "main-cache",
+      "status": 201,
+      "target": "at13-main-cache-16885612284"
+    },
+    {
+      "allowed": true,
+      "kind": "evidence-package",
+      "status": 201,
+      "target": "at13-permission-fixture/16885612284"
+    }
+  ]
+}

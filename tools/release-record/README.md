@@ -1,0 +1,19 @@
+# 証跡Package・release-record契約
+
+PE017Cの共通契約は受入済み。PE017F/Bの実OCI scan/SBOMとrelease writer結合は作業中であり、親PE017やAT04/12全体の完了を表さない。
+
+固定GitLab HTTPS base、serviceから固定project、digest、数値scan pipeline/job、固定種別でURLを構成する。MRのURLは完全一致の確認だけに用い、外部host・他project・query・userinfo・traversal・認証付きredirectを拒否する。用途別CI_JOB_TOKENを使い、registry資格と混同しない。tokenやAPIエラー本文を出力しない。
+
+schema v2とstrict Go model/record-checkは、固定source/repo/40桁SHA、元buildと今回scanの別ID、inputKind/checksum、各artifactのdigest/run/URL/checksum、DBのUpdatedAtと例外期限を検証する。unknown field・duplicate・null・欠落を拒否する。元build未証明の失敗記録ではID=0/0、input不足の失敗記録ではchecksum空を明示し、scanのIDや架空checksumで補完しない。失敗/判定不能は採用できず、新しい失敗を過去成功で迂回しない。
+
+1digest:N runをpipeline/job固有ファイル名で分ける。同run同bytesの書込はGET照合で冪等、別bytesはPUT前に拒否し、初回PUT後にもGET/checksum照合する。serverのGeneric重複禁止とper-project singlewriter resource_groupを前提とする。clientの事前GETだけで競合防止を保証しない。
+
+共通契約の実受入では、固定group141770909のgenericDuplicatesAllowed=false/例外空を読取確認した。frontend pipeline2908243077/job16907514770とbackend2908256232/job16907606026で、保護mainの実CI_JOB_TOKENによる3ファイルupload/read/checksum、同値冪等、別値拒否、server重複PUT400、拒否後の元bytes保持を確認した。schema0の予約fixtureであり、実image/SBOMの採用証跡ではない。frontend PE016F統合後の回帰pipeline2908613988/job16909737601も合格した。
+
+manifest86247034だけをSource2projectのdefaultPermissions=false/READ_PACKAGES allowlistへ追加した。manifest protected-main能力pipeline2908297735/job16907884468で固定URLからのGET/checksumと両Sourceへの新run PUT403を確認した。Source自身の未保護CI_JOB_TOKEN書込権限はAT13で別途実測する。CI rulesだけを技術的拒否の証明としない。
+
+PlanRetentionはdigest version内の全runを一体で保持し、最新10リリース OR 直近run90日以内 OR running/rollback登録の集合を削除除外する。失敗再scanも90日を延長し、exact90日境界を保持する。日時欠落/未来/duplicate/未列挙run/保護inventoryなしは計画全体を拒否する。実production inventoryとoperator reviewの接続は後続統合で必須。自動削除は無効で、このmoduleにDELETE処理はない。
+
+PE017FのValidateSBOM/sbom-checkは固定公式CycloneDX1.7 schema、全参照schemaのembedded hash、schema/format検証、config digest・Trivy版・時刻・依存参照とroot到達・同一イメージ報告の全package Name/Version集合の一致を検証する。runtime schema URL/file lookupを許可しない。PURL/architecture全項目の同一性や、生成時点の情報だけによるrun/source証明は主張しない。実immutable record/writerと消費側の実job完了状態・元build・今回run/SBOM/checksum照合はPE017F/018Fで接続する。
+
+受入正本はplatform-gitops docs/implementation内のPE017C受入証跡と、output/core-platform-v1-phase1-phase2-20261002/evidenceのPE017C-unit-accepted.json、サービス別storage/manifest-reader proof/audit、PE016F-C-regression proof/audit。提出時のpending表記はその時点の履歴であり、現在状態はpostmerge/Issue readbackで確認する。

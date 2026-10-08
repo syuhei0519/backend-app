@@ -1,0 +1,194 @@
+name: CI
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      docs: ${{ steps.diff.outputs.docs }}
+      base: ${{ steps.diff.outputs.base }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: diff
+        run: python3 -I ci/github/classify.py
+  docs:
+    needs: classify
+    if: needs.classify.outputs.docs == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Documentation and secret checks
+        env:
+          DOCS_BASE: ${{ needs.classify.outputs.base }}
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/work" -w /work \
+            -e CI_PIPELINE_SOURCE=merge_request_event -e CI_MERGE_REQUEST_DIFF_BASE_SHA="$DOCS_BASE" \
+            --entrypoint sh aquasec/trivy:0.75.0@sha256:9db099105405c648166e6b94155eb32f8da12673cf1f455207f7385cc9a77283 -ec 'git config --global --add safe.directory /work; sh ci/docs-check.sh'
+  validate:
+    needs: classify
+    if: needs.classify.outputs.docs != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Policy and boundary tests
+        run: bash ci/github/test.sh
+      - name: Backend validation
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test ./...
+          go build -trimpath -o .build/server ./cmd/server
+      - name: Source and rendered security checks
+        env:
+          SECURITY_RENDER_REQUIRED: 'false'
+        run: bash ci/github/source-scan.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: security-results-${{ github.run_attempt }}
+          path: .security/public/
+          include-hidden-files: true
+          retention-days: 30
+  image:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+        with:
+          driver-opts: image=moby/buildkit:v0.30.0-rootless@sha256:d76eb1caecac5733ef7553c1e90a1b21f1bb218cd1142d3553de0747b4a14ba9
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: security-results-${{ github.run_attempt }}
+          path: .validation
+      - name: Build trusted local validators
+        run: |
+          mkdir -p .security
+          (cd tools/scan-gate; CGO_ENABLED=0 go build -o ../../.security/scan-gate .)
+          (cd tools/oci-input; CGO_ENABLED=0 go build -o ../../.security/github-oci-check ./cmd/github-oci-check; CGO_ENABLED=0 go build -o ../../.security/oci-crane-check ./cmd/oci-crane-check)
+          (cd tools/release-record; CGO_ENABLED=0 go build -o ../../.security/sbom-check ./cmd/sbom-check)
+      - name: Build, validate, isolated runtime, image policy and SBOM
+        run: bash ci/github/oci.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: checked-image-${{ github.run_attempt }}
+          path: |
+            .oci/image.tar
+            .security/public/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    needs: [validate, image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.ref_protected && vars.ENABLE_GHCR_PUBLISH == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: ghcr-publish
+    concurrency:
+      group: ghcr-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: checked-image-${{ github.run_attempt }}
+      - name: Verify artifact and compile registry tool
+        run: |
+          mkdir -p .security/bin
+          (cd tools/oci-input; go build -o ../../.security/bin/github-oci-check ./cmd/github-oci-check)
+          GOBIN="$PWD/.security/bin" go install github.com/google/go-containerregistry/cmd/crane@v0.21.7
+          echo "$PWD/.security/bin" >> "$GITHUB_PATH"
+      - name: Publish the checked layout and release evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
+        run: python3 -I ci/github/release.py publish
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: published-evidence-${{ github.run_attempt }}
+          path: .security/public/release-record.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+  propose:
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.ref_protected && vars.ENABLE_MANIFEST_PR == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: manifest-update
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Propose a manifest update
+        env:
+          GH_TOKEN: ${{ secrets.MANIFEST_WRITE_TOKEN }}
+        run: python3 -I ci/github/release.py propose
+
+  ci-result:
+    if: always()
+    needs: [classify, docs, validate, image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Required check
+        env:
+          DOCS: ${{ needs.classify.outputs.docs }}
+          CLASSIFY: ${{ needs.classify.result }}
+          DOCS_RESULT: ${{ needs.docs.result }}
+          VALIDATE: ${{ needs.validate.result }}
+          IMAGE: ${{ needs.image.result }}
+        run: |
+          test "$CLASSIFY" = success
+          if test "$DOCS" = true; then test "$DOCS_RESULT" = success; else
+            test "$VALIDATE" = success
+            test "$IMAGE" = success
+          fi

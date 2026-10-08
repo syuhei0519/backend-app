@@ -1,0 +1,251 @@
+# BuildKit OCI生成とscan/互換性/runtime検証を組むCI定義。.gitlab-ci.ymlがincludeする。
+# privateなOCI入力を必要jobだけへ渡し、安全なJSONを後段writerへ渡す。ci/run-image-scan.shとtools/release-record/store_bundle.goを参照。
+# Native OCI build and scan are the backend default inspected delivery path.
+container-build-oci:
+  interruptible: false
+  stage: publish
+  image:
+    name: moby/buildkit:v0.30.0-rootless@sha256:d76eb1caecac5733ef7553c1e90a1b21f1bb218cd1142d3553de0747b4a14ba9
+    entrypoint: [""]
+  needs:
+    - format-and-vet
+    - unit-test
+    - backend-build
+    - manifest-helper-test
+    - source-scan
+    - job: security-policy-test
+      artifacts: true
+  resource_group: oci-validation
+  timeout: 10 minutes
+  variables:
+    BUILDKITD_FLAGS: --oci-worker-snapshotter=native --oci-worker-no-process-sandbox
+  rules:
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$AT12_PACKAGE_CONTRACT == "true"'
+      when: never
+    - if: '$OCI_VALIDATION_ENABLED == "true"'
+  script: ["sh ci/run-with-oci-budget.sh build sh ci/build-oci.sh"]
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 1 day
+    paths: [.oci/image.tar, .oci/image.tar.sha256, .oci/build-metadata.json, .oci/build-input.txt, .oci/layout-proof.json, .oci/failure.json, .oci-budget-build/public/]
+
+oci-format-compatibility:
+  interruptible: false
+  stage: verify
+  image:
+    name: aquasec/trivy:0.75.0@sha256:9db099105405c648166e6b94155eb32f8da12673cf1f455207f7385cc9a77283
+    entrypoint: [""]
+  needs:
+    - job: container-build-oci
+      artifacts: true
+    - job: security-policy-test
+      artifacts: true
+  resource_group: oci-validation
+  timeout: 15 minutes
+  cache:
+    key: trivy-0.75.0-db-v2-$CI_COMMIT_REF_PROTECTED
+    paths: [.cache/trivy/db/]
+    policy: pull-push
+    unprotect: false
+  rules:
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$AT12_PACKAGE_CONTRACT == "true"'
+      when: never
+    - if: '$AT16_MISSING_INPUT == "true"'
+      when: never
+    - if: '$OCI_VALIDATION_ENABLED == "true"'
+  script: ["sh ci/run-with-oci-budget.sh format sh ci/verify-oci-format.sh"]
+  artifacts:
+    when: always
+    # 安全化済みJSONだけを公開し、専用Reporterのread_api consumerが検証できるようにする。
+    access: all
+    expire_in: 90 days
+    paths: [.oci-compatibility/public/, .oci-budget-format/public/]
+
+oci-isolated-runtime:
+  interruptible: false
+  stage: verify
+  image:
+    name: moby/buildkit:v0.30.0-rootless@sha256:d76eb1caecac5733ef7553c1e90a1b21f1bb218cd1142d3553de0747b4a14ba9
+    entrypoint: [""]
+  needs:
+    - job: container-build-oci
+      artifacts: true
+    - job: security-policy-test
+      artifacts: true
+  resource_group: oci-validation
+  timeout: 5 minutes
+  variables:
+    BUILDKITD_FLAGS: --oci-worker-snapshotter=native --oci-worker-no-process-sandbox
+  rules:
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$AT12_PACKAGE_CONTRACT == "true"'
+      when: never
+    - if: '$AT16_MISSING_INPUT == "true"'
+      when: never
+    - if: '$OCI_VALIDATION_ENABLED == "true"'
+  script: ["sh ci/run-with-oci-budget.sh runtime sh ci/verify-oci-runtime.sh"]
+  artifacts:
+    when: always
+    # 安全化済みJSONだけを公開し、専用Reporterのread_api consumerが検証できるようにする。
+    access: all
+    expire_in: 90 days
+    paths: [.oci-runtime/public/, .oci-budget-runtime/public/]
+
+oci-missing-input:
+  interruptible: false
+  stage: verify
+  image: golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b
+  needs:
+    - job: container-build-oci
+      artifacts: true
+    - job: security-policy-test
+      artifacts: true
+  rules:
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$AT12_PACKAGE_CONTRACT == "true"'
+      when: never
+    - if: '$OCI_VALIDATION_ENABLED == "true" && $AT16_MISSING_INPUT == "true" && $CI_COMMIT_REF_PROTECTED == "false" && $CI_PIPELINE_SOURCE == "api"'
+  script: ["sh ci/verify-oci-missing-input.sh"]
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 90 days
+    paths: [.oci-missing/public/]
+
+oci-after-missing-input:
+  stage: propose
+  image: golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b
+  needs:
+    - job: oci-missing-input
+      artifacts: false
+  rules:
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$AT12_PACKAGE_CONTRACT == "true"'
+      when: never
+    - if: '$OCI_VALIDATION_ENABLED == "true" && $AT16_MISSING_INPUT == "true" && $CI_COMMIT_REF_PROTECTED == "false" && $CI_PIPELINE_SOURCE == "api"'
+  script: ['echo "Unexpected downstream execution after missing OCI input"; exit 99']
+
+# 基礎検証のみ。PE017Bのscan/SBOM/record契約を置き換えるものではない。
+oci-image-policy-validation:
+  interruptible: false
+  stage: verify
+  image:
+    name: aquasec/trivy:0.75.0@sha256:9db099105405c648166e6b94155eb32f8da12673cf1f455207f7385cc9a77283
+    entrypoint: [""]
+  needs:
+    - job: container-build-oci
+      artifacts: true
+    - job: security-policy-test
+      artifacts: true
+  resource_group: oci-validation
+  timeout: 15 minutes
+  cache:
+    key: trivy-0.75.0-db-v2-$CI_COMMIT_REF_PROTECTED
+    paths: [.cache/trivy/db/]
+    policy: pull-push
+    unprotect: false
+  rules:
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$AT12_PACKAGE_CONTRACT == "true" || $AT16_MISSING_INPUT == "true"'
+      when: never
+    - if: '$OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true"'
+  script: ["sh ci/run-image-scan.sh"]
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 90 days
+    paths: [.image-policy/public/, .oci-budget-format/public/]
+
+# Opt-in protected-main writer. It runs after a failed scan too, preserving the
+# failed record, and never authorizes registry publication or manifest updates.
+# 失敗scanも保存する専用writer。when: alwaysで動いてもfailed recordは採用できない。
+# resource_group=evidence-writerは同project内writerを直列化する。サーバーの同名upload拒否と既存checksum照合を併用する。
+# needsのoptionalはjob自体が生成されない構成を許す指定で、失敗を成功として扱う指定ではない。
+release-record-store:
+  interruptible: false
+  stage: propose
+  image: golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b
+  needs:
+    - job: oci-image-policy-validation
+      artifacts: true
+      optional: true
+    - job: image-scan
+      artifacts: true
+      optional: true
+    - job: security-policy-test
+      artifacts: true
+    - job: source-scan
+      artifacts: false
+  resource_group: evidence-writer
+  environment:
+    name: release-evidence
+    action: prepare
+  timeout: 5 minutes
+  rules:
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true" && $RELEASE_RECORD_STORE_ENABLED == "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $OCI_DELIVERY_VALIDATION_ENABLED != "true" && $AT17_RESCAN_ACCEPTANCE_ENABLED != "true" && $AT12_PACKAGE_CONTRACT != "true" && $AT16_MISSING_INPUT != "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "api"'
+      when: always
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$AT12_PACKAGE_CONTRACT == "true" || $AT16_MISSING_INPUT == "true"'
+      when: never
+    - if: '$RELEASE_RECORD_STORE_ENABLED == "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && ($CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web")'
+      when: always
+  script: [.security/record-store]
+  artifacts:
+    when: always
+    # 安全化済みJSONだけを公開し、専用Reporterのread_api consumerが検証できるようにする。
+    access: all
+    # 稼働中/rollback用として90日を超えてrunを保持する場合に備え、小さなnative由来proofを残す。OCI archiveはここには保存しない。
+    expire_in: never
+    paths: [.release-store/public/]
+
+# AT04の第2runは実DBが更新された後に実行し、同じ元native build artifactを使う。DB日時をfixtureで偽造しない。
+oci-image-rescan-validation:
+  extends: oci-image-policy-validation
+  needs:
+    - job: container-build-oci
+      artifacts: true
+    - job: security-policy-test
+      artifacts: true
+    - job: oci-image-policy-validation
+      artifacts: true
+  variables:
+    AT17_SAME_DIGEST_RESCAN: 'true'
+  rules:
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$AT17_RESCAN_ACCEPTANCE_ENABLED == "true" && $RELEASE_RECORD_STORE_ENABLED == "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "api" && $AT12_PACKAGE_CONTRACT != "true" && $AT16_MISSING_INPUT != "true"'
+      when: manual
+      allow_failure: false
+  script: ["sh ci/verify-oci-rescan.sh"]
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 90 days
+    paths: [.image-policy/public/, .oci-budget-format/public/, .prior-scan/record.json]
+
+release-record-store-rescan:
+  extends: release-record-store
+  needs:
+    - job: oci-image-rescan-validation
+      artifacts: true
+    - job: release-record-store
+      artifacts: false
+    - job: security-policy-test
+      artifacts: true
+    - job: source-scan
+      artifacts: false
+  rules:
+    - if: '$OCI_REGISTRY_RETRIEVAL_ENABLED == "true"'
+      when: never
+    - if: '$AT17_RESCAN_ACCEPTANCE_ENABLED == "true" && $RELEASE_RECORD_STORE_ENABLED == "true" && $OCI_VALIDATION_ENABLED == "true" && $IMAGE_SCAN_VALIDATION_ENABLED == "true" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "api" && $AT12_PACKAGE_CONTRACT != "true" && $AT16_MISSING_INPUT != "true"'
+      when: always
