@@ -16,7 +16,7 @@ docker buildx build --platform linux/amd64 --network=none --provenance=false --s
 config=$(python3 -c 'import json; print(json.load(open(".security/public/reader.json"))["configDigest"])')
 docker run --rm -e IMAGE_CONFIG="$config" --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work --entrypoint sh \
   aquasec/trivy:0.75.0@sha256:9db099105405c648166e6b94155eb32f8da12673cf1f455207f7385cc9a77283 -ec '
-    trivy image --download-db-only --cache-dir .cache/trivy --timeout 5m --quiet > .security/private/db.log 2>&1
+    trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db:2 --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --cache-dir .cache/trivy --timeout 5m --quiet > .security/private/db.log 2>&1
     : > .security/private/empty-ignore
     trivy image --input .oci/layout --cache-dir .cache/trivy --skip-db-update --timeout 5m --quiet --no-progress \
       --scanners vuln,secret,misconfig --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
