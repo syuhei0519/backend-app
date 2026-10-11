@@ -22,7 +22,7 @@ def check():
     layout=m.load('.security/public/layout.json');reader=m.load('.security/public/reader.json')
     m.require(m.sha(Path('.oci/image.tar').read_bytes())==layout['archiveSha256'])
     m.check_config(Path('.oci/layout'),reader['configDigest'],service)
-    nonce=secrets.token_hex(12);prefix='order-b2-'+nonce;tag='local/'+prefix+':checked'
+    nonce=secrets.token_hex(12);prefix='order-b2-'+nonce;tag='docker.io/local/'+prefix+':checked'
     network=prefix+'-net';db=prefix+'-db';app=prefix+'-app';migration=prefix+'-migration'
     made=[];net=False;imported=False
     def docker(*args,input=None):
