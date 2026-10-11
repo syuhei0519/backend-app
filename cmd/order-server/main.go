@@ -17,6 +17,10 @@ import (
 	"gitlab.com/platform-engineering-lab/backend-app/internal/store/orderpostgres"
 )
 
+// OCI build stamps preserve source identity for image scanning.
+var buildCommit = "unknown"
+var version = "0.0.0-dev"
+
 func main() { os.Exit(run(os.Args[1:])) }
 func run(args []string) int {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "migrate") {

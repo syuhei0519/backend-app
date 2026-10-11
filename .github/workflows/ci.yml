@@ -63,12 +63,15 @@ jobs:
         run: |
           test -z "$(gofmt -l .)"
           go vet ./...
-          go test ./...
+          go test -race ./...
           go build -trimpath -o .build/server ./cmd/server
+          go build -trimpath -o .build/order-server ./cmd/order-server
       - name: Source and rendered security checks
         env:
           SECURITY_RENDER_REQUIRED: 'false'
-        run: bash ci/github/source-scan.sh
+        run: |
+          bash ci/github/source-scan.sh
+          python3 -I ci/github/source-identity.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -78,11 +81,21 @@ jobs:
           retention-days: 30
   image:
     needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [backend, order]
+    defaults:
+      run:
+        working-directory: .images/${{ matrix.service }}
+    env:
+      RELEASE_SERVICE: ${{ matrix.service }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
+          path: .images/${{ matrix.service }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
@@ -95,32 +108,41 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: security-results-${{ github.run_attempt }}
-          path: .validation
+          path: .images/${{ matrix.service }}/.validation
       - name: Build trusted local validators
         run: |
           mkdir -p .security
           (cd tools/scan-gate; CGO_ENABLED=0 go build -o ../../.security/scan-gate .)
-          (cd tools/oci-input; CGO_ENABLED=0 go build -o ../../.security/github-oci-check ./cmd/github-oci-check; CGO_ENABLED=0 go build -o ../../.security/oci-crane-check ./cmd/oci-crane-check)
+          (cd tools/oci-input; CGO_ENABLED=0 go build -o ../../.security/oci-runtime-export ./cmd/oci-runtime-export; CGO_ENABLED=0 go build -o ../../.security/github-oci-check ./cmd/github-oci-check; CGO_ENABLED=0 go build -o ../../.security/oci-crane-check ./cmd/oci-crane-check)
           (cd tools/release-record; CGO_ENABLED=0 go build -o ../../.security/sbom-check ./cmd/sbom-check)
       - name: Build, validate, isolated runtime, image policy and SBOM
         run: bash ci/github/oci.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: checked-image-${{ github.run_attempt }}
+          name: checked-image${{ matrix.service == 'order' && '-order' || '' }}-${{ github.run_attempt }}
           path: |
-            .oci/image.tar
-            .security/public/
+            .images/${{ matrix.service }}/.oci/image.tar
+            .images/${{ matrix.service }}/.security/public/
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
   publish:
-    needs: [validate, image]
+    needs: [validate, image, ci-result]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.ref_protected && vars.ENABLE_GHCR_PUBLISH == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [backend, order]
+    defaults:
+      run:
+        working-directory: .images/${{ matrix.service }}
+    env:
+      RELEASE_SERVICE: ${{ matrix.service }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: ghcr-publish
     concurrency:
-      group: ghcr-publication
+      group: ghcr-publication-${{ matrix.service }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -128,6 +150,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
+          path: .images/${{ matrix.service }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
@@ -136,7 +159,8 @@ jobs:
           cache: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: checked-image-${{ github.run_attempt }}
+          name: checked-image${{ matrix.service == 'order' && '-order' || '' }}-${{ github.run_attempt }}
+          path: .images/${{ matrix.service }}
       - name: Verify artifact and compile registry tool
         run: |
           mkdir -p .security/bin
@@ -150,14 +174,23 @@ jobs:
         run: python3 -I ci/github/release.py publish
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: published-evidence-${{ github.run_attempt }}
-          path: .security/public/release-record.json
+          name: published-evidence${{ matrix.service == 'order' && '-order' || '' }}-${{ github.run_attempt }}
+          path: .images/${{ matrix.service }}/.security/public/release-record.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 90
   propose:
     needs: publish
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.ref_protected && vars.ENABLE_MANIFEST_PR == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [backend, order]
+    defaults:
+      run:
+        working-directory: .images/${{ matrix.service }}
+    env:
+      RELEASE_SERVICE: ${{ matrix.service }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: manifest-update
@@ -166,10 +199,12 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
+          path: .images/${{ matrix.service }}
           fetch-depth: 0
           persist-credentials: false
       - name: Propose a manifest update
         env:
+          GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
           GH_TOKEN: ${{ secrets.MANIFEST_WRITE_TOKEN }}
         run: python3 -I ci/github/release.py propose
 
@@ -179,6 +214,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: needs.classify.outputs.docs != 'true' && needs.image.result == 'success'
+        with:
+          pattern: checked-image-*
+          path: .checked
       - name: Required check
         env:
           DOCS: ${{ needs.classify.outputs.docs }}
@@ -191,4 +234,5 @@ jobs:
           if test "$DOCS" = true; then test "$DOCS_RESULT" = success; else
             test "$VALIDATE" = success
             test "$IMAGE" = success
+            python3 -I ci/github/matrix-result.py
           fi

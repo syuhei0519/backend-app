@@ -31,3 +31,6 @@ else
   (cd tools/bootstrap; CGO_ENABLED=0 go test -c -o ../../.build/bootstrap-test .)
 fi
 if test -f ci/github/release_test.py; then python3 -I ci/github/release_test.py; fi
+
+python3 -I ci/github/order-release_test.py
+python3 -I ci/github/fixtures/m0/release_test.py
