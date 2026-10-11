@@ -100,7 +100,8 @@ class Interop(unittest.TestCase):
             with self.assertRaises((ValueError,KeyError)):c.validate_record(bad,self.repo,self.commit,123,2,'order')
     def test_producer_rejects_swapped_inputs_and_rebuild(self):
         for path,key,value in [('.validation/source-identity.json','sourceCommit','b'*40),('.validation/source-identity.json','runId',124),
-                               ('.validation/source-identity.json','runAttempt',3),('.security/public/runtime.json','service','backend'),
+                               ('.validation/source-identity.json','runAttempt',3),('.validation/source-identity.json','runAttempt',2.0),
+                               ('.validation/source-identity.json','runId',123.0),('.security/public/runtime.json','service','backend'),
                                ('.security/public/runtime.json','configDigest','sha256:'+'0'*64),('.security/public/runtime.json','readOnly',False),
                                ('.security/public/sbom-proof.json','sha256','0'*64),('.security/public/sbom-proof.json','configDigest','sha256:'+'0'*64),
                                ('.security/public/layout.json','archiveSha256','0'*64)]:
@@ -216,7 +217,7 @@ class Interop(unittest.TestCase):
         with self.assertRaises(ValueError):a.check(root)
         scan.write_bytes(scanraw);recordpath.write_bytes(recordraw)
         target=root/'checked-image-order-2/.security/public/release-record.json';raw=target.read_bytes()
-        for key,value in [('runId',124),('sourceCommit','b'*40),('runAttempt',3),('service','backend'),('imagePolicyPassed',False),('sourceScanSha256','0'*64)]:
+        for key,value in [('runId',124),('runId',123.0),('sourceCommit','b'*40),('runAttempt',3),('runAttempt',2.0),('service','backend'),('imagePolicyPassed',False),('sourceScanSha256','0'*64)]:
             self.write(target,{**p.decode(raw),key:value})
             with self.subTest(key=key),self.assertRaises(ValueError):a.check(root)
         target.write_bytes(raw)

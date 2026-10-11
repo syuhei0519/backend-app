@@ -12,6 +12,7 @@ def check(root=Path('.checked')):
     for name,service in expected.items():
         base=root/name;public=base/'.security/public';record=m.load(public/'release-record.json')
         _,image,schema,_=m.service_contract(repo,service)
+        m.require(type(record['runId']) is int and type(record['runAttempt']) is int)
         m.require(record['repository']==repo and record['sourceCommit']==commit and record['runId']==run_id and record['runAttempt']==attempt)
         m.require(record['workflowRef']==m.os.environ['GITHUB_WORKFLOW_REF'])
         m.require(record['schema']==schema and record['imageRepository']==image)

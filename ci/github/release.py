@@ -115,6 +115,7 @@ def tag_for(commit,run_id,attempt,service=None):
 
 def check_source(repo,commit,run_id,attempt,source,root=Path('.validation')):
     binding=load(root/'source-identity.json')
+    require(type(binding['runId']) is int and type(binding['runAttempt']) is int)
     require(binding=={'repository':repo,'sourceCommit':commit,'runId':run_id,'runAttempt':attempt,
                       'sourceScanSha256':sha((root/'source-scan.json').read_bytes())})
     require(source['pass'] is True)
