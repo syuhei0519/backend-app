@@ -33,6 +33,7 @@ func run(args []string) int {
 		return 1
 	}
 	logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	logger.Info("Order process starting", "build_version", version, "build_commit", buildCommit)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	store, err := orderpostgres.Open(ctx, cfg.DatabaseURL)
