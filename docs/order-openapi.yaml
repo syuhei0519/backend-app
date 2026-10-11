@@ -1,0 +1,178 @@
+openapi: 3.1.0
+info:
+  title: Order API
+  version: 1.0.0
+  description: >-
+    Immutable orders for an isolated lab. account_id is a historical reference;
+    it does not guarantee Account existence, ownership or authorization. A positive
+    nonexistent ID is accepted. Deleting an Account retains its Orders. No Account
+    API calls or cross-database foreign keys are used. Authentication is not provided.
+    POST has no idempotency support: a retry after an ambiguous commit can duplicate an order.
+paths:
+  /api/orders:
+    post:
+      operationId: createOrder
+      description: >-
+        Commits before responding. Body at most 16384 bytes including whitespace.
+        All keys required, no unknown or duplicate keys (including escaped spellings).
+        Decimal/exponent integer spellings, null, non-object, invalid UTF-8 and trailing
+        data are rejected. Content-Type application/json optionally with charset=utf-8.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderInput'
+      responses:
+        '201':
+          description: Committed Order
+          headers:
+            Location:
+              schema:
+                type: string
+              description: /api/orders/{id}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/Invalid'
+        '413':
+          description: payload_too_large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: unsupported_media_type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '500':
+          $ref: '#/components/responses/Internal'
+  /api/orders/{id}:
+    get:
+      operationId: getOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Positive int64; lexical form [1-9][0-9]*.
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*$'
+      responses:
+        '200':
+          description: Persisted Order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/Invalid'
+        '404':
+          description: not_found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '500':
+          $ref: '#/components/responses/Internal'
+  /livez:
+    get:
+      operationId: liveness
+      responses:
+        '200':
+          description: Process serving; remains healthy during shutdown drain.
+  /readyz:
+    get:
+      operationId: readiness
+      responses:
+        '200':
+          description: Order DB reachable and compatible migration version 1 within one second.
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  schemas:
+    OrderInput:
+      type: object
+      additionalProperties: false
+      required: [account_id, item_code, quantity]
+      properties:
+        account_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+          description: Historical reference only; nonexistent and deleted accounts permitted.
+        item_code:
+          type: string
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+          minLength: 1
+          maxLength: 64
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 999
+    Order:
+      type: object
+      additionalProperties: false
+      required: [id, account_id, item_code, quantity, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        account_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        item_code:
+          type: string
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 999
+        created_at:
+          type: string
+          format: date-time
+          description: Database timestamp serialized as UTC RFC3339, possibly with fractional seconds.
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+  responses:
+    Invalid:
+      description: validation_error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unavailable:
+      description: unavailable (DB unavailable, readiness incompatible or shutting down)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Internal:
+      description: internal_error; no SQL, DSN or request body disclosed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
