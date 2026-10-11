@@ -4,6 +4,7 @@ Docker import converts transport only; image ID must equal the OCI config digest
 All cleanup is restricted to random names created by this invocation.
 """
 import importlib.util
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -35,8 +36,12 @@ def check():
         data=None if body is None else json.dumps(body).encode()
         req=urllib.request.Request(url+path,data=data,method=method,headers={'Content-Type':'application/json'})
         try:
-            with urllib.request.urlopen(req,timeout=2) as res:return res.status,res.read()
+            with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req,timeout=2) as res:return res.status,res.read()
         except urllib.error.HTTPError as err:return err.code,err.read()
+    def endpoint():
+        address=json.loads(docker('inspect',app))[0]['NetworkSettings']['Networks'][network]['IPAddress']
+        m.require(ipaddress.IPv4Address(address).is_private)
+        return 'http://'+address+':8080'
     try:
         m.run(['.security/oci-runtime-export','.oci/layout',layout['digest'],'.oci/runtime.tar',tag])
         docker('load','--input','.oci/runtime.tar');imported=True
@@ -55,10 +60,9 @@ def check():
         flags=['--pull=never','--network',network,'--read-only','--cap-drop=ALL','--security-opt=no-new-privileges','--user','10001:10001','--env','DATABASE_URL='+dsn,'--env','LOG_LEVEL=error']
         docker('create','--name',migration,*flags,tag,'migrate');made.append(migration)
         docker('start',migration);m.require(docker('wait',migration).strip()==b'0')
-        docker('create','--name',app,*flags,'--publish','127.0.0.1::8080',tag);made.append(app)
+        docker('create','--name',app,*flags,tag);made.append(app)
         docker('start',app)
-        port=docker('port',app,'8080/tcp').decode().strip();m.require(port.startswith('127.0.0.1:'))
-        url='http://'+port
+        url=endpoint()
         for _ in range(60):
             try:
                 if request('GET','/readyz')[0]==200:break
@@ -68,8 +72,7 @@ def check():
         m.require(request('GET','/livez')[0]==200)
         # Runtime process and migration command both used the same checked image.
         docker('restart',app)
-        port=docker('port',app,'8080/tcp').decode().strip();m.require(port.startswith('127.0.0.1:'))
-        url='http://'+port
+        url=endpoint()
         for _ in range(60):
             try:
                 if request('GET','/readyz')[0]==200:break
