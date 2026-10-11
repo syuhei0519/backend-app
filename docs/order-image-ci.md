@@ -113,3 +113,28 @@ trust is unchanged, and the custom CA cannot be used by the resulting applicatio
 
 References: [Docker build secrets](https://docs.docker.com/build/building/secrets/)
 and [secret mount reference](https://docs.docker.com/reference/dockerfile/#run---mounttypesecret).
+
+## Scan provenance before record creation
+
+`image-policy.py` runs the trusted scan-gate and SBOM validator against the same
+private Trivy JSON after conversion. Each validator checks the raw ImageID against
+the selected OCI config. The producer also checks OCI manifest/config bytes,
+source labels, service entrypoint, shared source identity and run/attempt before
+emitting the public summary. It never blesses an existing public image-scan.json.
+A failed producer removes previous summary/proof outputs.
+
+The summary carries imageIdentity (repository/source/run/attempt/service,
+manifest/config/archive and source-scan checksum), rawScanSha256 and sbomSha256.
+The separate image-proof.json seals that identity and exact summary/SBOM-proof
+bytes; the SBOM proof carries the same raw-scan fingerprint. record(), ci-result
+and publish() all require these bindings. Missing/foreign/malformed proofs and
+pre-record summary swaps fail closed, even if a new record hashes the swapped
+summary. Publication rechecks the original archive and its manifest/config first,
+before any API or registry effects. Raw scans and trust inputs remain private.
+
+These are trusted CI outputs, not signatures: an attacker controlling the trusted
+producer or coherently forging every proof is outside this artifact-mixing
+boundary. Hashing alone is not scan authentication. Account v1 and Order v2
+release-record fields and M0/M1 consumer contracts are unchanged; historical
+unbound checked-image artifacts cannot be newly recorded or published by this
+producer. Existing published release consumption retains its versioned contract.

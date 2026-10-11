@@ -22,6 +22,8 @@ def check(root=Path('.checked')):
             m.require(m.sha((public/filename).read_bytes())==record[key])
         m.require(m.sha((base/'.oci/image.tar').read_bytes())==record['archiveSha256'])
         m.check_source(repo,commit,run_id,attempt,m.load(public/'source-scan.json'),public)
+        m.check_image(m.image_identity(repo,commit,run_id,attempt,service,record['imageDigest'],
+                                       record['configDigest'],record['archiveSha256'],record['sourceScanSha256']),public)
         proof=m.load(public/'runtime.json')
         m.require(proof=={'service':service,'digest':record['imageDigest'],'archiveSha256':record['archiveSha256'],
                          'configDigest':record['configDigest'],'passed':True,'readOnly':True,'capDrop':'ALL','network':'internal'})

@@ -27,8 +27,7 @@ digest=$(python3 -c 'import json; print(json.load(open(".security/public/layout.
 # Runtime imports the exact validated config/layers into a fresh isolated fixture.
 docker pull postgres@sha256:9b18b78397054fce88a9552e9d5a3ad5bb7fd258c5b3cc1c5028e46373d6ea8f
 python3 -I ci/github/runtime.py
-config=$(python3 -c 'import json; print(json.load(open(".security/public/reader.json"))["configDigest"])')
-docker run --rm -e IMAGE_CONFIG="$config" --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work --entrypoint sh \
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work --entrypoint sh \
   aquasec/trivy:0.75.0@sha256:9db099105405c648166e6b94155eb32f8da12673cf1f455207f7385cc9a77283 -ec '
     trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db:2 --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --cache-dir .cache/trivy --timeout 5m --quiet > .security/private/db.log 2>&1
     : > .security/private/empty-ignore
@@ -36,10 +35,7 @@ docker run --rm -e IMAGE_CONFIG="$config" --user "$(id -u):$(id -g)" -v "$PWD:/w
       --scanners vuln,secret,misconfig --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
       --ignorefile .security/private/empty-ignore --list-all-pkgs --format json \
       --output .security/private/image.json > .security/private/scan.log 2>&1
-    .security/scan-gate -policy security/scan-policy.json -db .cache/trivy/db/metadata.json \
-      -report .security/private/image.json -out .security/public/image-scan.json -scanner-exit 0 -image-config "$IMAGE_CONFIG"
     trivy convert --format cyclonedx --output .security/private/sbom.cdx.json .security/private/image.json > .security/private/sbom.log 2>&1
-    .security/sbom-check .security/private/sbom.cdx.json .security/private/image.json "$IMAGE_CONFIG" > .security/public/sbom-proof.json
-    cp .security/private/sbom.cdx.json .security/public/sbom.cdx.json
   '
+python3 -I ci/github/image-policy.py
 python3 -I ci/github/release.py record

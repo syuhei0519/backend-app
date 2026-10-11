@@ -36,3 +36,5 @@ python3 -I ci/github/order-release_test.py
 python3 -I ci/github/fixtures/m0/release_test.py
 
 python3 -I ci/github/build-ca_test.py
+
+python3 -I ci/github/image-policy_test.py

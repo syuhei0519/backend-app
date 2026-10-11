@@ -134,6 +134,38 @@ def check_runtime(service,layout,reader):
     require(proof=={'service':service,'digest':layout['digest'],'archiveSha256':layout['archiveSha256'],
                     'configDigest':reader['configDigest'],'passed':True,'readOnly':True,'capDrop':'ALL','network':'internal'})
 
+def image_identity(repo,commit,run_id,attempt,service,digest,config,archive,source_hash):
+    return {'repository':repo,'sourceCommit':commit,'runId':run_id,'runAttempt':attempt,
+            'service':service,'imageDigest':digest,'configDigest':config,'archiveSha256':archive,
+            'sourceScanSha256':source_hash}
+
+def check_oci_identity(layout,reader,repo,commit,service,root=Path('.oci/layout')):
+    require(layout['sourceCommit']==commit and reader['fullLayerValidation'] is True)
+    require(layout['digest']==reader['digest'] and DIGEST.fullmatch(layout['digest']))
+    require(sha(Path('.oci/image.tar').read_bytes())==layout['archiveSha256'])
+    manifest=(root/'blobs/sha256'/layout['digest'][7:]).read_bytes()
+    require('sha256:'+sha(manifest)==layout['digest'])
+    require(decode(manifest)['config']['digest']==reader['configDigest'])
+    config=check_config(root,reader['configDigest'],service)
+    require(config['config']['Labels']['org.opencontainers.image.revision']==commit)
+    require(config['config']['Labels']['org.opencontainers.image.source']=='https://github.com/'+repo)
+
+def check_image(identity,public=PUBLIC):
+    image=load(public/'image-scan.json');proof=load(public/'image-proof.json')
+    sbom=load(public/'sbom-proof.json')
+    require(type(identity['runId']) is int and type(identity['runAttempt']) is int)
+    for value in (image['imageIdentity'],proof['identity']):
+        require(type(value['runId']) is int and type(value['runAttempt']) is int and value==identity)
+    raw=image['rawScanSha256'];require(isinstance(raw,str) and re.fullmatch('[0-9a-f]{64}',raw))
+    require(proof=={'schema':'core-platform/github-image-proof/v1','identity':identity,
+                   'rawScanSha256':raw,'imageScanSha256':sha((public/'image-scan.json').read_bytes()),
+                   'sbomProofSha256':sha((public/'sbom-proof.json').read_bytes())})
+    require(sbom['rawScanSha256']==raw and sbom['configDigest']==identity['configDigest'])
+    require(sbom['sha256']==image['sbomSha256']==sha((public/'sbom.cdx.json').read_bytes()))
+    require(image['pass'] is True and image['trivyVersion']=='0.75.0')
+    fresh(image['scannedAt']);fresh(image['dbUpdatedAt'])
+    return image
+
 def record():
     repo,commit,run_id,attempt=identity()
     service,image_repository,schema,_=service_contract(repo,os.environ.get('RELEASE_SERVICE'))
@@ -149,6 +181,9 @@ def record():
     proof=load(PUBLIC/'sbom-proof.json')
     require(proof['sha256']==sha(sbom) and proof['configDigest']==reader['configDigest'])
     check_source(repo,commit,run_id,attempt,source)
+    check_oci_identity(layout,reader,repo,commit,service)
+    check_image(image_identity(repo,commit,run_id,attempt,service,layout['digest'],reader['configDigest'],
+                               layout['archiveSha256'],sha(Path('.validation/source-scan.json').read_bytes())))
     check_runtime(service,layout,reader)
     for name in ('source-scan.json','source-identity.json'):
         (PUBLIC/name).write_bytes(Path('.validation',name).read_bytes())
@@ -200,9 +235,12 @@ def publish():
     require(sha(Path(PUBLIC/'image-scan.json').read_bytes())==result['imageScanSha256'])
     proof=decode(run(['github-oci-check','.oci/image.tar',result['archiveSha256'],'.oci/publish-layout',commit,repo]))
     require(proof['digest']==result['imageDigest'])
-    config=check_config(Path('.oci/publish-layout'),result['configDigest'],service)
+    check_oci_identity(proof,{'digest':result['imageDigest'],'configDigest':result['configDigest'],
+                              'fullLayerValidation':True},repo,commit,service,Path('.oci/publish-layout'))
     check_source(repo,commit,run_id,attempt,load(PUBLIC/'source-scan.json'),PUBLIC)
     require(sha((PUBLIC/'source-scan.json').read_bytes())==result['sourceScanSha256'])
+    check_image(image_identity(repo,commit,run_id,attempt,service,result['imageDigest'],result['configDigest'],
+                               result['archiveSha256'],result['sourceScanSha256']))
     check_runtime(service,proof,{'configDigest':result['configDigest']})
     require(api('/repos/'+repo+'/git/ref/heads/main')['object']['sha']==commit)
     image=result['imageRepository']+':'+commit
