@@ -45,7 +45,7 @@ def check():
         docker('create','--pull=never','--name',db,'--network',network,'--env','POSTGRES_PASSWORD='+nonce,POSTGRES);made.append(db)
         docker('start',db)
         for _ in range(60):
-            try:docker('exec',db,'pg_isready','-U','postgres');break
+            try:docker('exec',db,'pg_isready','-h','127.0.0.1','-U','postgres');break
             except ValueError:time.sleep(1)
         else:raise ValueError('fixture readiness')
         database,role=('orders','order_app') if service=='order' else ('accounts','account_app')
@@ -68,6 +68,8 @@ def check():
         m.require(request('GET','/livez')[0]==200)
         # Runtime process and migration command both used the same checked image.
         docker('restart',app)
+        port=docker('port',app,'8080/tcp').decode().strip();m.require(port.startswith('127.0.0.1:'))
+        url='http://'+port
         for _ in range(60):
             try:
                 if request('GET','/readyz')[0]==200:break
