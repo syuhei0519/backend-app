@@ -5,7 +5,13 @@
 FROM golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS build
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+# Optional build-only trust; never copy the bundle or persist its path with ENV.
+RUN --mount=type=secret,id=build_ca,target=/run/secrets/build_ca,required=false \
+    if [ -e /run/secrets/build_ca ]; then \
+      test -s /run/secrets/build_ca || { echo 'Empty build CA bundle' >&2; exit 1; }; \
+      export SSL_CERT_FILE=/run/secrets/build_ca; \
+    fi; \
+    go mod download
 COPY . .
 ARG VCS_REF=unknown
 # trimpathとGo symbolを残す。trimpathでbuild-infoからldflagsが省略されても、Trivyがバイナリ内のstamp済みmain module versionを読めるようにする。

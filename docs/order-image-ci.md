@@ -2,7 +2,7 @@
 
 Order uses Dockerfile.order, /order-server (including its migrate subcommand),
 linux/amd64 and the same pinned builder/runtime bases as Account. Account's
-Dockerfile and v1 image/tag/artifact identities remain unchanged. Order SQL is
+runtime and v1 image/tag/artifact identities remain unchanged. Order SQL is
 embedded by the existing B1 implementation. No Account migration files are copied
 into the Order image.
 
@@ -72,3 +72,44 @@ digests; no registry tag updater was found. Publication can create a separate
 manifest PR after approval. Merging that later PR can cause automatic Argo sync.
 Actual cluster state and out-of-repository automation are not observed here. AC-3,
 Deployment Ready and aggregate Issue Completion remain Manager/later-stage gates.
+
+## Optional build-time CA bundle
+
+Ordinary GitHub CI needs no new Secret, variable or Environment. Both Dockerfiles
+use the builder's standard trust when `build_ca` is absent. An environment with an
+already authorized CA bundle may pass that existing file read-only as a BuildKit
+secret, outside the source context:
+
+```sh
+docker buildx build --secret "id=build_ca,src=$SSL_CERT_FILE" -f Dockerfile.order .
+# With an already configured buildctl worker:
+buildctl build --frontend dockerfile.v0 --local context=. --local dockerfile=. \
+  --opt filename=Dockerfile.order --secret "id=build_ca,src=$SSL_CERT_FILE" \
+  --output type=oci,dest=order.oci.tar
+# Existing GitHub OCI chain, optional local invocation:
+OCI_BUILD_CA_FILE="$SSL_CERT_FILE" RELEASE_SERVICE=order bash ci/github/oci.sh
+```
+
+Only `go mod download` receives the secret and command-local `SSL_CERT_FILE`.
+The subsequent test/build RUN and runtime stage do not mount it. TLS and Go module
+checksum verification remain enabled, and module endpoints are unchanged. The
+bundle must be PEM trust material appropriate for the environment; an empty bundle
+fails immediately and a bundle lacking the required issuer fails TLS on a cold
+build. Go can also consult standard certificate directories, so an unrelated bundle
+does not force failure for endpoints already trusted by the standard store.
+
+Secret mounts were selected over COPY/delete (which can retain bytes in layers),
+ARG/ENV (persistent metadata), or truststore installation (unnecessary persistent
+change). The BuildKit daemon's own registry trust is a separate prerequisite; this
+option addresses only the Dockerfile dependency RUN. No trust provisioning or
+permission changes are performed by the helper. Keep the bundle outside the build
+context; do not log it or supply it as a build argument.
+
+Secret contents do not invalidate BuildKit cache. Use a fresh worker or `--no-cache`
+when verifying missing/valid/invalid trust or after CA rotation; a cached dependency
+step is not evidence of current TLS acceptance. A trusted CA can authenticate
+connections for that RUN: only use an existing authorized bundle. Normal runtime
+trust is unchanged, and the custom CA cannot be used by the resulting application.
+
+References: [Docker build secrets](https://docs.docker.com/build/building/secrets/)
+and [secret mount reference](https://docs.docker.com/reference/dockerfile/#run---mounttypesecret).

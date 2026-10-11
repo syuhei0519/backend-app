@@ -8,7 +8,16 @@ case "${RELEASE_SERVICE:-backend}" in
 esac
 mkdir -p .oci .security/private .security/public .cache/trivy
 trap 'rm -rf .security/private' EXIT
-docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+# Opt in only with an existing bundle outside the source context. Ordinary CI
+# passes no secret and retains the builder's standard trust store.
+build_secrets=()
+if [[ -n ${OCI_BUILD_CA_FILE:-} ]]; then
+  [[ -f $OCI_BUILD_CA_FILE && -r $OCI_BUILD_CA_FILE && -s $OCI_BUILD_CA_FILE ]] || {
+    echo 'Build CA bundle must be a readable nonempty file' >&2; exit 1;
+  }
+  build_secrets=(--secret "id=build_ca,src=$OCI_BUILD_CA_FILE")
+fi
+docker buildx build "${build_secrets[@]}" --platform linux/amd64 --provenance=false --sbom=false \
   --build-arg "VCS_REF=$GITHUB_SHA" --build-arg "VCS_SOURCE=https://github.com/$GITHUB_REPOSITORY" \
   -f "$dockerfile" --output type=oci,dest=.oci/image.tar,oci-mediatypes=true .
 archive=$(sha256sum .oci/image.tar | cut -d ' ' -f1)
