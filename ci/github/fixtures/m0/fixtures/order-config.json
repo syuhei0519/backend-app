@@ -1,0 +1,1 @@
+{"architecture":"amd64","config":{"Entrypoint":["/order-server"],"Labels":{"org.opencontainers.image.revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","org.opencontainers.image.source":"https://github.com/syuhei0519/backend-app"}},"os":"linux"}

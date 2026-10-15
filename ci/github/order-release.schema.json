@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Published synthetic/B2 Order release v2 structural contract; runtime bindings are mandatory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "service",
+    "repository",
+    "sourceCommit",
+    "runId",
+    "runAttempt",
+    "workflowRef",
+    "imageRepository",
+    "imageDigest",
+    "configDigest",
+    "archiveSha256",
+    "sbomSha256",
+    "sourceScanSha256",
+    "imageScanSha256",
+    "scannedAt",
+    "dbUpdatedAt",
+    "createdAt",
+    "validUntil",
+    "sourcePolicyPassed",
+    "imagePolicyPassed",
+    "sbomValidated",
+    "isolatedRuntimePassed",
+    "published",
+    "protectedMain",
+    "deploymentAuthorized"
+  ],
+  "properties": {
+    "schema": {
+      "const": "core-platform/github-release/v2"
+    },
+    "service": {
+      "const": "order"
+    },
+    "repository": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}/backend-app$",
+      "type": "string"
+    },
+    "sourceCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "runId": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "runAttempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "workflowRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "imageRepository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "imageDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "configDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "archiveSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sbomSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sourceScanSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "imageScanSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "scannedAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dbUpdatedAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "validUntil": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourcePolicyPassed": {
+      "const": true
+    },
+    "imagePolicyPassed": {
+      "const": true
+    },
+    "sbomValidated": {
+      "const": true
+    },
+    "isolatedRuntimePassed": {
+      "const": true
+    },
+    "published": {
+      "const": true
+    },
+    "protectedMain": {
+      "const": true
+    },
+    "deploymentAuthorized": {
+      "const": false
+    }
+  }
+}

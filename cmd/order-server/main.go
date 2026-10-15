@@ -17,6 +17,10 @@ import (
 	"gitlab.com/platform-engineering-lab/backend-app/internal/store/orderpostgres"
 )
 
+// OCI build stamps preserve source identity for image scanning.
+var buildCommit = "unknown"
+var version = "0.0.0-dev"
+
 func main() { os.Exit(run(os.Args[1:])) }
 func run(args []string) int {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "migrate") {
@@ -29,6 +33,7 @@ func run(args []string) int {
 		return 1
 	}
 	logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	logger.Info("Order process starting", "build_version", version, "build_commit", buildCommit)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	store, err := orderpostgres.Open(ctx, cfg.DatabaseURL)
