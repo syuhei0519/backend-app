@@ -10,17 +10,28 @@ git archive --format=tar HEAD > .security/private/source.tar
 tar -xf .security/private/source.tar -C .security/source
 scanner_exit=0
 : > .security/private/empty-ignore
+db_cache_present=false
+if [ -f .cache/trivy/db/metadata.json ]; then db_cache_present=true; fi
+observe_db() {
+  # Optional outside GitHub; GitHub builds this pinned-dependency helper first.
+  # Only safe typed metadata is retained. Private download logs are still removed.
+  if [ -x .security/source-db-observation ]; then
+    .security/source-db-observation -cache-metadata-existed="$db_cache_present" > .security/public/db-observation.json || echo 'DB observation unavailable' >&2
+  fi
+}
 attempt=0
 while :; do
   attempt=$((attempt + 1))
-  if trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db:2 --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --cache-dir .cache/trivy --timeout 5m --quiet > .security/private/db.log 2>&1; then break; fi
+  if trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db:2 --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --cache-dir .cache/trivy --timeout 5m > .security/private/db.log 2>&1; then break; fi
   if [ "$attempt" -ge 2 ]; then
     printf '%s\n' '{"pass":false,"reason":"scanner DB retrieval unavailable"}' > .security/public/failure.json
     echo 'Security DB retrieval failed; no delivery permitted' >&2
+    observe_db
     exit 2
   fi
   sleep 2
 done
+observe_db
 db_input=.cache/trivy/db/metadata.json
 policy_input=security/scan-policy.json
 scan_timeout=5m
