@@ -35,6 +35,22 @@ type DB struct {
 	Version   int
 	UpdatedAt time.Time
 }
+
+// DBRejection contains only typed, allowlisted metadata, never raw scanner input.
+type DBRejection struct {
+	Reason      string `json:"reason"`
+	Version     int    `json:"version"`
+	UpdatedAt   string `json:"updatedAt"`
+	ObservedAt  string `json:"observedAt"`
+	MaxAgeHours int    `json:"maxAgeHours"`
+}
+
+func (e *DBRejection) Error() string {
+	// These string/int fields cannot fail JSON encoding.
+	data, _ := json.Marshal(e)
+	return "DB rejected: " + string(data)
+}
+
 type Vulnerability struct{ VulnerabilityID, PkgName, InstalledVersion, FixedVersion, Severity string }
 type Secret struct{ RuleID, Severity string }
 type Misconfiguration struct{ ID, Severity, Status string }
@@ -198,8 +214,23 @@ func evaluateInput(policyData, dbData, reportData []byte, now time.Time, configD
 	if err := decode(dbData, &db, false); err != nil {
 		return s, err
 	}
-	if db.Version != 2 || db.UpdatedAt.IsZero() || db.UpdatedAt.After(now) || now.Sub(db.UpdatedAt) > 24*time.Hour {
-		return s, errors.New("DB unknown, future, or expired")
+	var dbReason string
+	switch {
+	case db.Version != 2:
+		dbReason = "unsupported_version"
+	case db.UpdatedAt.IsZero():
+		dbReason = "missing_updated_at"
+	case db.UpdatedAt.After(now):
+		dbReason = "future_updated_at"
+	case now.Sub(db.UpdatedAt) > 24*time.Hour:
+		dbReason = "expired"
+	}
+	if dbReason != "" {
+		return s, &DBRejection{
+			Reason: dbReason, Version: db.Version,
+			UpdatedAt:  db.UpdatedAt.UTC().Format(time.RFC3339Nano),
+			ObservedAt: now.UTC().Format(time.RFC3339Nano), MaxAgeHours: 24,
+		}
 	}
 	if err := decode(reportData, &r, false); err != nil {
 		return s, err
