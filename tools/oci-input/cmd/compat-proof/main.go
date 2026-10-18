@@ -3,9 +3,9 @@ package main
 
 import (
 	"bufio"
-	oci "core-platform/oci-input"
 	"encoding/json"
 	"fmt"
+	oci "github.com/syuhei0519/backend-app/tools/oci-input"
 	"io"
 	"os"
 	"regexp"

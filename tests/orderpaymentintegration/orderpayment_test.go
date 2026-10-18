@@ -20,8 +20,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/order"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/payment"
+	"github.com/syuhei0519/backend-app/internal/order"
+	"github.com/syuhei0519/backend-app/internal/payment"
 )
 
 func port(t *testing.T) string {

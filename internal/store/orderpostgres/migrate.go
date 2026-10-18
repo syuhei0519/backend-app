@@ -5,8 +5,8 @@ package orderpostgres
 import (
 	"context"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/order"
-	migrations "gitlab.com/platform-engineering-lab/backend-app/order-migrations"
+	"github.com/syuhei0519/backend-app/internal/order"
+	migrations "github.com/syuhei0519/backend-app/order-migrations"
 	"io/fs"
 	"sort"
 	"strconv"

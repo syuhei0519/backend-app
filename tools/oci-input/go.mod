@@ -1,4 +1,4 @@
-module core-platform/oci-input
+module github.com/syuhei0519/backend-app/tools/oci-input
 
 go 1.27.0
 

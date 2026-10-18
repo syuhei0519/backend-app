@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/payment"
+	"github.com/syuhei0519/backend-app/internal/payment"
 )
 
 var ErrTarget = errors.New("Payment database target rejected")

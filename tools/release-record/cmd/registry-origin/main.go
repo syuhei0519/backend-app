@@ -1,10 +1,10 @@
 package main
 
 import (
-	release "core-platform/release-record"
 	"encoding/json"
 	"errors"
 	"fmt"
+	release "github.com/syuhei0519/backend-app/tools/release-record"
 	"io"
 	"os"
 	"strconv"

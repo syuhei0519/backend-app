@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"gitlab.com/platform-engineering-lab/backend-app/internal/notification"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/notificationconfig"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/notificationhttp"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/store/notificationpostgres"
+	"github.com/syuhei0519/backend-app/internal/notification"
+	"github.com/syuhei0519/backend-app/internal/notificationconfig"
+	"github.com/syuhei0519/backend-app/internal/notificationhttp"
+	"github.com/syuhei0519/backend-app/internal/store/notificationpostgres"
 )
 
 // OCI build stamps preserve source identity for image scanning.

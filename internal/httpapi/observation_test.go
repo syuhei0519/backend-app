@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/platform-engineering-lab/backend-app/internal/account"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/telemetry"
+	"github.com/syuhei0519/backend-app/internal/account"
+	"github.com/syuhei0519/backend-app/internal/telemetry"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"

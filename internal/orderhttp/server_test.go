@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/platform-engineering-lab/backend-app/internal/order"
+	"github.com/syuhei0519/backend-app/internal/order"
 )
 
 type fakeStore struct {

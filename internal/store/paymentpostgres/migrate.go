@@ -5,8 +5,8 @@ package paymentpostgres
 import (
 	"context"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/payment"
-	migrations "gitlab.com/platform-engineering-lab/backend-app/payment-migrations"
+	"github.com/syuhei0519/backend-app/internal/payment"
+	migrations "github.com/syuhei0519/backend-app/payment-migrations"
 	"io/fs"
 	"sort"
 	"strconv"

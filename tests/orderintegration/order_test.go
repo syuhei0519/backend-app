@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/account"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/httpapi"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/order"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/ordertest"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/store/postgres"
+	"github.com/syuhei0519/backend-app/internal/account"
+	"github.com/syuhei0519/backend-app/internal/httpapi"
+	"github.com/syuhei0519/backend-app/internal/order"
+	"github.com/syuhei0519/backend-app/internal/ordertest"
+	"github.com/syuhei0519/backend-app/internal/store/postgres"
 )
 
 func TestDisposableHTTPPersistenceAndAccount(t *testing.T) {

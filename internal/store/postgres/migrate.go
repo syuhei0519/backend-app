@@ -5,7 +5,7 @@ package postgres
 import (
 	"context"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gitlab.com/platform-engineering-lab/backend-app/migrations"
+	"github.com/syuhei0519/backend-app/migrations"
 	"io/fs"
 	"sort"
 	"strconv"

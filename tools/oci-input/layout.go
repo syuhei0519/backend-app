@@ -272,7 +272,7 @@ func Validate(archive, checksum, destination, commit string) (Proof, error) {
 // ValidateGitHub keeps the archive, platform and layer boundary and requires
 // the exact repository identity supplied by the trusted GitHub workflow.
 func ValidateGitHub(archive, checksum, destination, commit, repository string) (Proof, error) {
-	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}/backend-app$`).MatchString(repository) {
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}/(backend-app|frontend-app)$`).MatchString(repository) {
 		return Proof{}, fail()
 	}
 	proof, err := validateSource(archive, checksum, destination, commit, "https://github.com/"+repository)

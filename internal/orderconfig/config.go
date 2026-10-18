@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"gitlab.com/platform-engineering-lab/backend-app/internal/paymentclient"
+	"github.com/syuhei0519/backend-app/internal/paymentclient"
 )
 
 type Config struct {

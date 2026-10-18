@@ -12,6 +12,10 @@ func TestGitHubSourceBoundary(t *testing.T) {
 	}{
 		{"github", "example-org/backend-app", true},
 		{"github", "other-org/backend-app", false},
+		{"github", "example-org/frontend-app", false},
+		{"github-frontend", "example-org/frontend-app", true},
+		{"github-frontend", "example-org/backend-app", false},
+		{"github-frontend", "other-org/frontend-app", false},
 		{"github", "example-org/other", false},
 		{"", "example-org/backend-app", false},
 	} {

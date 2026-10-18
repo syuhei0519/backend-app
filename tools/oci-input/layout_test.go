@@ -53,6 +53,9 @@ func fixture(change string) map[string][]byte {
 	if change == "github" {
 		labels["org.opencontainers.image.source"] = "https://github.com/example-org/backend-app"
 	}
+	if change == "github-frontend" {
+		labels["org.opencontainers.image.source"] = "https://github.com/example-org/frontend-app"
+	}
 	if change == "source" {
 		labels["org.opencontainers.image.source"] = "https://example.org/other"
 	}

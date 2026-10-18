@@ -1,4 +1,4 @@
-module core-platform/scan-gate
+module github.com/syuhei0519/backend-app/tools/scan-gate
 
 go 1.27.0
 

@@ -1,9 +1,9 @@
 package main
 
 import (
-	release "core-platform/release-record"
 	"encoding/json"
 	"fmt"
+	release "github.com/syuhei0519/backend-app/tools/release-record"
 	"io"
 	"os"
 	"time"

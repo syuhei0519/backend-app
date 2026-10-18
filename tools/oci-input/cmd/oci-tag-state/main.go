@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	oci "core-platform/oci-input"
 	"fmt"
+	oci "github.com/syuhei0519/backend-app/tools/oci-input"
 	"net/http"
 	"os"
 	"time"

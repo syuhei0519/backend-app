@@ -117,6 +117,13 @@ func inspectYAML(data []byte, file string) ([]Finding, error) {
 					}
 				}
 			}
+			// Walk every mapping, including unknown/hidden PodSpecs. Like the
+			// privileged boundary, this does not rely on workload kind or image.
+			for _, key := range []string{"hostNetwork", "hostPID", "hostIPC"} {
+				if v := m[key]; v != nil && (v.Kind != yaml.ScalarNode || v.Tag != "!!bool" || !strings.EqualFold(v.Value, "false")) {
+					add("LOCAL-HOST-NAMESPACE")
+				}
+			}
 			if v := m["privileged"]; v != nil && v.Tag == "!!bool" && v.Value == "true" {
 				add("LOCAL-PRIVILEGED")
 			}

@@ -57,3 +57,11 @@ No cluster operation, deployment, image publication, main push, merge, security
 configuration or CI/Ruleset change was performed. Independent Test/Review,
 current-head CI and Manager assessment of all six AC and required integration
 remain outstanding. This report must not close the Issue automatically.
+
+## 統合後の最終確認
+
+上の kind 未確認は実装・マージ前の時点の記録として保持する。
+2026-10-18 07:31:25 UTC のマージ後のローカル kind 試験では、Order Service→Payment Service の
+成功201/再送200、拒否201/再送200、実 Payment GET との一致を確認済み。
+[最終確認コメント](https://github.com/syuhei0519/backend-app/issues/50#issuecomment-6247220637) を参照。
+今回の整理作業でこの試験を再実行したものではなく、premerge の結果に遡及しない。
