@@ -1,0 +1,40 @@
+name: Account low load (manual)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  account-load:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Install pinned k6
+        run: |
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            https://github.com/grafana/k6/releases/download/v2.3.0/k6-v2.3.0-linux-amd64.tar.gz -o /tmp/k6.tar.gz
+          echo '39c3117b6af817592dcd0ce4242105c0a7af10948c2a425306f0be8f7a8a8ab1  /tmp/k6.tar.gz' | sha256sum -c -
+          mkdir -p .build/k6
+          tar xzf /tmp/k6.tar.gz -C .build/k6 --strip-components=1
+          echo "$PWD/.build/k6" >> "$GITHUB_PATH"
+      - name: Guard and HTTP fixture tests
+        run: python3 -I performance/account/test_scenario.py -v
+      - name: Build disposable Account API
+        run: |
+          mkdir -p .build/performance
+          CGO_ENABLED=0 go build -trimpath -ldflags="-X main.buildCommit=$(git rev-parse HEAD)" -o .build/performance/server ./cmd/server
+      - name: Real isolated API and DB (failure is not skipped)
+        run: python3 -I performance/account/isolated.py --binary .build/performance/server --output .build/account-load
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: account-load
+          path: .build/account-load/
+          if-no-files-found: error
+          retention-days: 7
