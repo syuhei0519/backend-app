@@ -3,8 +3,10 @@
 Related issue: https://github.com/syuhei0519/backend-app/issues/2
 
 Order is an independent process (`cmd/order-server`) with immutable records.
-It does not modify or call the Account service. Payment, Notification, lists,
+It does not modify or call the Account service. Notification, lists,
 updates, deletes, authentication and caller-specific authorization are not provided.
+An optional [Order → Payment endpoint](order-payment-communication.md) calls the
+existing Payment API for an existing Order without updating Order state.
 This API is intended for an isolated lab behind a ClusterIP; external exposure
 requires a separate access-control design.
 

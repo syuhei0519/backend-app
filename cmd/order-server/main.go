@@ -14,6 +14,8 @@ import (
 	"gitlab.com/platform-engineering-lab/backend-app/internal/order"
 	"gitlab.com/platform-engineering-lab/backend-app/internal/orderconfig"
 	"gitlab.com/platform-engineering-lab/backend-app/internal/orderhttp"
+	"gitlab.com/platform-engineering-lab/backend-app/internal/orderpayment"
+	"gitlab.com/platform-engineering-lab/backend-app/internal/paymentclient"
 	"gitlab.com/platform-engineering-lab/backend-app/internal/store/orderpostgres"
 )
 
@@ -54,7 +56,17 @@ func run(args []string) int {
 		logger.Error("Order database target unavailable or rejected")
 		return 1
 	}
-	handler := orderhttp.New(order.New(store), store)
+	var creator orderpayment.Creator
+	if cfg.PaymentURL != "" {
+		client, err := paymentclient.New(cfg.PaymentURL)
+		if err != nil {
+			logger.Error("invalid Order configuration")
+			return 1
+		}
+		defer client.Close()
+		creator = client
+	}
+	handler := orderhttp.NewWithPayments(order.New(store), store, creator)
 	server := &http.Server{Addr: cfg.Address, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	stopped := make(chan error, 1)
 	go func() { stopped <- server.ListenAndServe() }()

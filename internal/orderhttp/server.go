@@ -17,6 +17,9 @@ import (
 	"unicode/utf8"
 
 	"gitlab.com/platform-engineering-lab/backend-app/internal/order"
+	"gitlab.com/platform-engineering-lab/backend-app/internal/orderpayment"
+	"gitlab.com/platform-engineering-lab/backend-app/internal/payment"
+	"gitlab.com/platform-engineering-lab/backend-app/internal/paymentclient"
 )
 
 const MaxBody = 16 << 10
@@ -24,12 +27,16 @@ const MaxBody = 16 << 10
 type readiness interface{ Ready(context.Context) error }
 type Server struct {
 	service  *order.Service
+	payments *orderpayment.Service
 	check    readiness
 	stopping atomic.Bool
 }
 
 func New(service *order.Service, check readiness) *Server {
-	return &Server{service: service, check: check}
+	return NewWithPayments(service, check, nil)
+}
+func NewWithPayments(service *order.Service, check readiness, creator orderpayment.Creator) *Server {
+	return &Server{service: service, check: check, payments: orderpayment.New(service, creator)}
 }
 func (s *Server) BeginShutdown() { s.stopping.Store(true) }
 
@@ -68,6 +75,47 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Location", "/api/orders/"+strconv.FormatInt(item.ID, 10))
 		write(w, 201, item)
+	case strings.HasPrefix(path, "/api/orders/") && strings.HasSuffix(path, "/payments") && !strings.Contains(strings.TrimSuffix(strings.TrimPrefix(path, "/api/orders/"), "/payments"), "/"):
+		if !method(w, r, "POST") {
+			return
+		}
+		value := strings.TrimSuffix(strings.TrimPrefix(path, "/api/orders/"), "/payments")
+		id, err := strconv.ParseInt(value, 10, 64)
+		if !pathID.MatchString(value) || err != nil {
+			failure(w, order.ErrInvalid)
+			return
+		}
+		input, status, code := decodePayment(w, r)
+		if status != 0 {
+			problem(w, status, code)
+			return
+		}
+		input.OrderID = id
+		item, created, err := s.payments.Create(r.Context(), input)
+		if err != nil {
+			switch {
+			case errors.Is(err, payment.ErrInvalid):
+				problem(w, 400, "validation_error")
+			case errors.Is(err, payment.ErrConflict):
+				problem(w, 409, "idempotency_conflict")
+			case errors.Is(err, orderpayment.ErrUnconfigured):
+				problem(w, 503, "payment_unconfigured")
+			case errors.Is(err, paymentclient.ErrTimeout):
+				problem(w, 504, "payment_timeout")
+			case errors.Is(err, paymentclient.ErrUnavailable):
+				problem(w, 503, "payment_unavailable")
+			case errors.Is(err, paymentclient.ErrBadResponse):
+				problem(w, 502, "payment_bad_response")
+			default:
+				failure(w, err)
+			}
+			return
+		}
+		status = 200
+		if created {
+			status = 201
+		}
+		write(w, status, item)
 	case strings.HasPrefix(path, "/api/orders/") && len(strings.TrimPrefix(path, "/api/orders/")) > 0 && !strings.Contains(strings.TrimPrefix(path, "/api/orders/"), "/"):
 		if !method(w, r, "GET") {
 			return
@@ -87,6 +135,62 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		problem(w, 404, "not_found")
 	}
+}
+func decodePayment(w http.ResponseWriter, r *http.Request) (payment.Input, int, string) {
+	var input payment.Input
+	media, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || media != "application/json" || len(params) > 1 || (len(params) == 1 && !strings.EqualFold(params["charset"], "utf-8")) {
+		return input, 415, "unsupported_media_type"
+	}
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxBody))
+	var limit *http.MaxBytesError
+	if errors.As(err, &limit) {
+		return input, 413, "payload_too_large"
+	}
+	if err != nil || !utf8.Valid(raw) {
+		return input, 400, "validation_error"
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	token, err := d.Token()
+	if err != nil || token != json.Delim('{') {
+		return input, 400, "validation_error"
+	}
+	seen := map[string]bool{}
+	for d.More() {
+		token, err = d.Token()
+		key, ok := token.(string)
+		if err != nil || !ok || seen[key] {
+			return input, 400, "validation_error"
+		}
+		seen[key] = true
+		var value json.RawMessage
+		if d.Decode(&value) != nil || bytes.Equal(value, []byte("null")) {
+			return input, 400, "validation_error"
+		}
+		switch key {
+		case "request_id":
+			err = json.Unmarshal(value, &input.RequestID)
+		case "amount_minor":
+			err = json.Unmarshal(value, &input.AmountMinor)
+		case "currency":
+			err = json.Unmarshal(value, &input.Currency)
+		case "simulate_result":
+			err = json.Unmarshal(value, &input.SimulateResult)
+		default:
+			return input, 400, "validation_error"
+		}
+		if err != nil {
+			return input, 400, "validation_error"
+		}
+	}
+	token, err = d.Token()
+	if err != nil || token != json.Delim('}') || len(seen) != 4 {
+		return input, 400, "validation_error"
+	}
+	if err = d.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return input, 400, "validation_error"
+	}
+	return input, 0, ""
 }
 func method(w http.ResponseWriter, r *http.Request, allowed string) bool {
 	if r.Method == allowed {

@@ -24,3 +24,19 @@ func TestLoad(t *testing.T) {
 		t.Fatal("address accepted")
 	}
 }
+
+func TestPaymentURL(t *testing.T) {
+	t.Setenv("LOG_LEVEL", "")
+	t.Setenv("ORDER_HTTP_ADDRESS", "")
+	for _, value := range []string{"", "http://learning-payment:8080"} {
+		t.Setenv("ORDER_PAYMENT_URL", value)
+		c, err := Load()
+		if err != nil || c.PaymentURL != value {
+			t.Fatal("payment URL")
+		}
+	}
+	t.Setenv("ORDER_PAYMENT_URL", "http://private:password@host:8080/api")
+	if _, err := Load(); err == nil || err.Error() != "invalid ORDER_PAYMENT_URL" {
+		t.Fatal("unsafe config error")
+	}
+}

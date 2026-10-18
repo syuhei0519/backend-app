@@ -7,10 +7,13 @@ import (
 	"net"
 	"os"
 	"strings"
+
+	"gitlab.com/platform-engineering-lab/backend-app/internal/paymentclient"
 )
 
 type Config struct {
 	Address, DatabaseURL string
+	PaymentURL           string
 	LogLevel             slog.Level
 }
 
@@ -27,5 +30,11 @@ func Load() (Config, error) {
 	if _, _, err := net.SplitHostPort(address); err != nil {
 		return Config{}, errors.New("invalid ORDER_HTTP_ADDRESS")
 	}
-	return Config{Address: address, DatabaseURL: os.Getenv("DATABASE_URL"), LogLevel: level}, nil
+	paymentURL := os.Getenv("ORDER_PAYMENT_URL")
+	if paymentURL != "" {
+		if err := paymentclient.ValidateOrigin(paymentURL); err != nil {
+			return Config{}, err
+		}
+	}
+	return Config{Address: address, DatabaseURL: os.Getenv("DATABASE_URL"), PaymentURL: paymentURL, LogLevel: level}, nil
 }

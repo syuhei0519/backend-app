@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: Order API
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Immutable orders for an isolated lab. account_id is a historical reference;
     it does not guarantee Account existence, ownership or authorization. A positive
     nonexistent ID is accepted. Deleting an Account retains its Orders. No Account
     API calls or cross-database foreign keys are used. Authentication is not provided.
-    POST has no idempotency support: a retry after an ambiguous commit can duplicate an order.
+    Order creation has no idempotency support: a retry after an ambiguous commit can duplicate an order.
 paths:
   /api/orders:
     post:
@@ -83,6 +83,105 @@ paths:
           $ref: '#/components/responses/Unavailable'
         '500':
           $ref: '#/components/responses/Internal'
+  /api/orders/{id}/payments:
+    post:
+      operationId: createOrderPayment
+      description: >-
+        Validates the input, reads the Order, then sends one POST to Payment.
+        order_id is derived from the path and is forbidden in the body. Strict
+        JSON input rules and 16384-byte limit match Order creation. No redirects,
+        automatic retries or proxy. Processing budget after validation is 5 seconds;
+        the entire downstream call including DNS/connect/response body is at most
+        2 seconds, bounded by the parent deadline. No Order state is changed.
+        503/504 can mean a committed payment whose response was lost: manually
+        resend the same request_id and identical input to recover the result.
+        A decline is a recorded terminal result, not a successful payment.
+        Location from Payment is never forwarded.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Existing Order ID, positive int64 with lexical form [1-9][0-9]*.
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderPaymentInput'
+      responses:
+        '201':
+          description: New payment record; status is succeeded or declined.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPayment'
+        '200':
+          description: Identical replay; same id, terminal status and created_at.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPayment'
+        '400':
+          $ref: '#/components/responses/Invalid'
+        '404':
+          description: Order not_found; no downstream call.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: method_not_allowed, Allow POST.
+          headers:
+            Allow:
+              schema:
+                const: POST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: idempotency_conflict; same request_id with different valid input.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: payload_too_large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: unsupported_media_type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '502':
+          description: payment_bad_response; invalid or unexpected downstream response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: >-
+            payment_unconfigured, payment_unavailable or Order unavailable.
+            An unavailable downstream can have committed; do not assume unpaid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '504':
+          description: payment_timeout; outcome unknown, same-ID manual replay permitted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /livez:
     get:
       operationId: liveness
@@ -145,6 +244,55 @@ components:
           type: string
           format: date-time
           description: Database timestamp serialized as UTC RFC3339, possibly with fractional seconds.
+    OrderPaymentInput:
+      type: object
+      additionalProperties: false
+      required: [request_id, amount_minor, currency, simulate_result]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          not:
+            const: '00000000-0000-0000-0000-000000000000'
+        amount_minor:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        currency:
+          const: JPY
+        simulate_result:
+          enum: [success, decline]
+    OrderPayment:
+      type: object
+      additionalProperties: false
+      required: [id, request_id, order_id, amount_minor, currency, simulate_result, status, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        request_id:
+          $ref: '#/components/schemas/OrderPaymentInput/properties/request_id'
+        order_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        amount_minor:
+          $ref: '#/components/schemas/OrderPaymentInput/properties/amount_minor'
+        currency:
+          const: JPY
+        simulate_result:
+          enum: [success, decline]
+        status:
+          enum: [succeeded, declined]
+          description: success maps to succeeded; decline maps to declined.
+        created_at:
+          type: string
+          format: date-time
     Error:
       type: object
       required: [error]
