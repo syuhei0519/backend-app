@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1.7
+# Local Notification build; no release/publication pipeline integration.
+# VCS_REF/VCS_SOURCEをOCIラベルへ結び、build用依存を最終runtimeへそのまま持ち込まない。
+FROM golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+# Optional build-only trust; never copy the bundle or persist its path with ENV.
+RUN --mount=type=secret,id=build_ca,target=/run/secrets/build_ca,required=false \
+    if [ -e /run/secrets/build_ca ]; then \
+      test -s /run/secrets/build_ca || { echo 'Empty build CA bundle' >&2; exit 1; }; \
+      export SSL_CERT_FILE=/run/secrets/build_ca; \
+    fi; \
+    go mod download
+COPY . .
+ARG VCS_REF=unknown
+# trimpathとGo symbolを残す。trimpathでbuild-infoからldflagsが省略されても、Trivyがバイナリ内のstamp済みmain module versionを読めるようにする。
+RUN go test ./internal/notification ./internal/notificationhttp ./internal/notificationconfig ./internal/store/notificationpostgres ./cmd/notification-server && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-X main.buildCommit=${VCS_REF} -X main.version=0.0.0+git.${VCS_REF}" -o /out/notification-server ./cmd/notification-server
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+ARG VCS_REF=unknown
+ARG VCS_SOURCE=unknown
+LABEL org.opencontainers.image.revision=$VCS_REF org.opencontainers.image.source=$VCS_SOURCE
+COPY --from=build --chown=10001:10001 /out/notification-server /notification-server
+USER 10001:10001
+EXPOSE 8080
+ENTRYPOINT ["/notification-server"]
