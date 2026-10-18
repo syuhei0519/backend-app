@@ -16,7 +16,8 @@ Order→Payment の実装時点の kind 未確認を保持し、統合後の最�
 ## 観察結果
 
 `go test ./...`: 成功（実 DB の設定を要求するテストは既定の skip 条件に従う）。
-3共有 module の `go test ./...`: 成功。frontend / backend の相互 source identity 誤結合を拒否。
+3共有 module の `go test ./...`: 成功。
+初回 push CI は module/import 移行後の共有 CLI の gofmt 未適用で失敗した。履歴を保持し、整形を追加した。frontend / backend の相互 source identity 誤結合を拒否。
 `bash ci/github/test.sh`: 成功。
 workflow YAML の構文を確認。既存 CI job 名・required result gate は保持。
 再現には保存環境の `/workspace/.cloud-setup/activate.sh` 相当の Go / Helm / Python が必要。

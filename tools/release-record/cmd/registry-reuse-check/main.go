@@ -1,8 +1,8 @@
 package main
 
 import (
-	release "github.com/syuhei0519/backend-app/tools/release-record"
 	"fmt"
+	release "github.com/syuhei0519/backend-app/tools/release-record"
 	"io"
 	"os"
 	"strconv"
