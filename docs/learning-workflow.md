@@ -21,3 +21,9 @@ Manager 判定、固定 bytes、配送 receipt、attempt 予算は通常の Issu
 Order→Payment の成功201/再送200、拒否201/再送200、実 Payment GET との一致を確認済み。
 [最終確認コメント](https://github.com/syuhei0519/backend-app/issues/50#issuecomment-6247220637)。
 これは今回のタスクで再実行した試験ではない。既存 Issue / PR 本文の更新は Manager が担当する。
+
+## 過去の生成報告
+
+受入結果・権限試験などの生成 JSON (1件) は固定履歴へ整理した。
+[当時の文書](https://github.com/syuhei0519/backend-app/tree/6f53affcdcad6f270eee2f205915d22fe0145e9c/docs) から取得できる。
+過去の成功・失敗の判定は変更していない。新規の結論と再現コマンドは Markdown に残す。
