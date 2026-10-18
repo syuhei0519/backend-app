@@ -10,7 +10,7 @@ implementation/single-issue/Markdown Handoffに従った。
 | repo | 取得・固定した最新main | branch | 実装commit |
 | --- | --- | --- | --- |
 | backend-app | dd22f325a2f67944507969d8c5ba1b291adf6e01 | feat/account-k6 | a65152e9b8d837584591f7e2f8ca86203c1a4ed8 |
-| platform-gitops | 3a62ce5b087e7e2215b74028acac6b878679e40c | feat/account-sli | 687b9ec9e0d58849c8abbde4922ec52b9978c1c1 |
+| platform-gitops | 3a62ce5b087e7e2215b74028acac6b878679e40c | feat/account-sli | 336a2e6c0d556935c6da2f4adb127d8fa1190dfe |
 
 Draft PR: [backend #54](https://github.com/syuhei0519/backend-app/pull/54)、
 [platform #89](https://github.com/syuhei0519/platform-gitops/pull/89)。
@@ -126,3 +126,27 @@ versionはtarget_info、HTTP系列はjob/instanceにあり、run識別labelは�
 ManagerがGitHub UI等の正規アクセスで当該security失敗を確認するまでmerge判断はblocked。
 root CI/security方針/権限の変更や迂回は行っていない。backend最新headのCIは進行中。
 実装と担当Cloud自己検証は完了。未解消の阻害要因はこのrequired CI失敗と詳細取得拒否。
+
+
+追記: Managerが正規GitHub連携で取得したログにより、上記security失敗は
+`render structure rejected` と判明した。追加promtool fixtureのPyYAML出力に22個のaliasがあり、
+既存scan-gateのalias拒否と不一致だった。scannerのnetwork障害とは扱わない。
+固定shared Actionと同じ `backend-app@ba8b3d211ac3e497900abd6c6f44f45388e3801c` の
+scan-gateで修正前のexit 2を再現し、fixture出力だけをJSON（YAML互換、aliasなし）へ変更した。
+構造検査器、許容kind、root CI、権限は変更していない。修正は上表のplatform commitに固定。
+
+再現: 上記固定scan-gateをbuildして `SCAN_GATE` に指定し、platformで次を実行する。
+修正前はexit 2、修正後は `.rendered` 全体の構造検査PASS。
+続けて既存RED 10・SLI 17ケース、Helm render/configを再検証し全てPASS。
+
+```sh
+python3 learning/monitoring/validate.py --output .rendered/learning-monitoring
+"$SCAN_GATE" -check-render-only .rendered -out /tmp/sli-render-check.json
+sh learning/monitoring/check-tools.sh .rendered/learning-monitoring
+```
+
+修正commit `336a2e6c0d556935c6da2f4adb127d8fa1190dfe` ではpush/PR双方の
+`validate`（Source and rendered security checksを含む）とrequired `ci-result` が成功した。
+上記構造拒否によるmerge blockerは解消。backend実装のvalidateも成功し、image checksは進行中。
+本Handoff追記後の最新head CIの最終確認はManagerが行う。Cloudのログ/artifact取得Forbiddenは
+環境ごとの未解決事項として残し、同操作の再試行や権限変更はしていない。
