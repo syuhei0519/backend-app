@@ -17,7 +17,7 @@ func TestGitHubSourceBoundary(t *testing.T) {
 		{"github-frontend", "example-org/backend-app", false},
 		{"github-frontend", "other-org/frontend-app", false},
 		{"github", "example-org/other", false},
-		{"", "example-org/backend-app", false},
+		{"source", "example-org/backend-app", false},
 	} {
 		t.Run(tc.kind+tc.repo, func(t *testing.T) {
 			dir := t.TempDir()

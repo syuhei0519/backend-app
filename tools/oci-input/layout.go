@@ -1,4 +1,4 @@
-// OCI archiveを安全に検証・展開する共通入力境界。ci/build-oci.shと各scan/runtime/publication jobが呼ぶ。
+// OCI archiveを安全に検証・展開する共通入力境界。ci/github/oci.shと各scan/runtime/publication jobが呼ぶ。
 // tar checksum、manifest/config/layerのdigest、sourceラベルとplatformを照合し、上限付きProofを返す。
 package oci
 
@@ -265,10 +265,6 @@ func inspect(dir, commit, expectedSource string) (string, int, error) {
 // directory for both scanner and crane, not the input tar as a Docker tar.
 // archive100MiB、展開合計1GiBなどの固定上限を適用。重複/不正pathやリンク等の危険なtar入力を拒否する。
 // checksumとOCI構造が正しくても脆弱性検査・runtime互換性は別工程で必要。
-func Validate(archive, checksum, destination, commit string) (Proof, error) {
-	return validateSource(archive, checksum, destination, commit, "https://gitlab.com/syuhei-platform-engineering-lab/backend-app")
-}
-
 // ValidateGitHub keeps the archive, platform and layer boundary and requires
 // the exact repository identity supplied by the trusted GitHub workflow.
 func ValidateGitHub(archive, checksum, destination, commit, repository string) (Proof, error) {
@@ -378,5 +374,5 @@ func validateSource(archive, checksum, destination, commit, expectedSource strin
 	if os.Rename(dir, destination) != nil {
 		return proof, fail()
 	}
-	return Proof{1, commit, 86247033, checksum, ai.Size(), total, digest, layers, "linux/amd64", false}, nil
+	return Proof{1, commit, 0, checksum, ai.Size(), total, digest, layers, "linux/amd64", false}, nil
 }

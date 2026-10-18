@@ -1,0 +1,16 @@
+name: Shared CI tools
+description: Materialize selected Go modules from this fixed Action checkout
+inputs:
+  modules:
+    description: Space-separated module names
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        SHARED_MODULES: ${{ inputs.modules }}
+        SHARED_ACTION_PATH: ${{ github.action_path }}
+      run: |
+        read -r -a modules <<< "$SHARED_MODULES"
+        bash "$SHARED_ACTION_PATH/../../../ci/materialize-tools.sh" "$GITHUB_WORKSPACE" "${modules[@]}"
