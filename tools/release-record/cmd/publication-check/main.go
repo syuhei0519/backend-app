@@ -1,7 +1,7 @@
 package main
 
 import (
-	release "core-platform/release-record"
+	release "github.com/syuhei0519/backend-app/tools/release-record"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"

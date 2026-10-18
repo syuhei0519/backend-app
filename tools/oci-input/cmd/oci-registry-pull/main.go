@@ -3,7 +3,7 @@ package main
 import (
 	"archive/tar"
 	"context"
-	oci "core-platform/oci-input"
+	oci "github.com/syuhei0519/backend-app/tools/oci-input"
 	"fmt"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"

@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/account"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/telemetry"
+	"github.com/syuhei0519/backend-app/internal/account"
+	"github.com/syuhei0519/backend-app/internal/telemetry"
 	"time"
 )
 

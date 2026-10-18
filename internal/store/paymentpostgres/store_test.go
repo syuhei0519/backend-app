@@ -5,7 +5,7 @@ import (
 	"errors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/payment"
+	"github.com/syuhei0519/backend-app/internal/payment"
 	"testing"
 )
 

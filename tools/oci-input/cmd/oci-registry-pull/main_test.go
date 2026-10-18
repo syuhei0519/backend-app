@@ -3,7 +3,7 @@ package main
 import (
 	"archive/tar"
 	"bytes"
-	oci "core-platform/oci-input"
+	oci "github.com/syuhei0519/backend-app/tools/oci-input"
 	"crypto/sha256"
 	"fmt"
 	"io"

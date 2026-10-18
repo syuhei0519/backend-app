@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"gitlab.com/platform-engineering-lab/backend-app/internal/payment"
+	"github.com/syuhei0519/backend-app/internal/payment"
 )
 
 const Timeout = 2 * time.Second

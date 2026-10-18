@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/order"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/payment"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/paymentclient"
+	"github.com/syuhei0519/backend-app/internal/order"
+	"github.com/syuhei0519/backend-app/internal/payment"
+	"github.com/syuhei0519/backend-app/internal/paymentclient"
 	"strings"
 	"testing"
 )

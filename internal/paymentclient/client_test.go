@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/platform-engineering-lab/backend-app/internal/payment"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/paymenthttp"
+	"github.com/syuhei0519/backend-app/internal/payment"
+	"github.com/syuhei0519/backend-app/internal/paymenthttp"
 )
 
 var input = payment.Input{RequestID: "550e8400-e29b-41d4-a716-446655440000", OrderID: 1, AmountMinor: 1000, Currency: "JPY", SimulateResult: "success"}

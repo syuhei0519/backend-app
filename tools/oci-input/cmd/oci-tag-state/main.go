@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	oci "core-platform/oci-input"
+	oci "github.com/syuhei0519/backend-app/tools/oci-input"
 	"fmt"
 	"net/http"
 	"os"

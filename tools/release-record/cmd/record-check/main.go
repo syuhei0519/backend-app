@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	release "core-platform/release-record"
+	release "github.com/syuhei0519/backend-app/tools/release-record"
 )
 
 // Validation consumes stdin and emits only fixed status text, never input values.

@@ -1,4 +1,4 @@
-module core-platform/release-record
+module github.com/syuhei0519/backend-app/tools/release-record
 
 go 1.27.0
 

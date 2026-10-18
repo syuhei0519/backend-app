@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"gitlab.com/platform-engineering-lab/backend-app/internal/payment"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/paymentconfig"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/paymenthttp"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/store/paymentpostgres"
+	"github.com/syuhei0519/backend-app/internal/payment"
+	"github.com/syuhei0519/backend-app/internal/paymentconfig"
+	"github.com/syuhei0519/backend-app/internal/paymenthttp"
+	"github.com/syuhei0519/backend-app/internal/store/paymentpostgres"
 )
 
 // OCI build stamps preserve source identity for image scanning.

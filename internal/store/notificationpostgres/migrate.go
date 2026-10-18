@@ -5,8 +5,8 @@ package notificationpostgres
 import (
 	"context"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/notification"
-	migrations "gitlab.com/platform-engineering-lab/backend-app/notification-migrations"
+	"github.com/syuhei0519/backend-app/internal/notification"
+	migrations "github.com/syuhei0519/backend-app/notification-migrations"
 	"io/fs"
 	"sort"
 	"strconv"

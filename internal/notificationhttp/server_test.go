@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/notification"
+	"github.com/syuhei0519/backend-app/internal/notification"
 	"net/http/httptest"
 	"strings"
 	"testing"

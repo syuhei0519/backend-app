@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/order"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/ordertest"
+	"github.com/syuhei0519/backend-app/internal/order"
+	"github.com/syuhei0519/backend-app/internal/ordertest"
 )
 
 func TestDisposableMigration(t *testing.T) {

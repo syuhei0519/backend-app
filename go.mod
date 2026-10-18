@@ -1,4 +1,4 @@
-module gitlab.com/platform-engineering-lab/backend-app
+module github.com/syuhei0519/backend-app
 
 go 1.27.0
 

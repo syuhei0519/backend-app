@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 
-	release "core-platform/release-record"
+	release "github.com/syuhei0519/backend-app/tools/release-record"
 )
 
 func main() {

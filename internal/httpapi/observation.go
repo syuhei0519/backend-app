@@ -3,7 +3,7 @@
 package httpapi
 
 import (
-	"gitlab.com/platform-engineering-lab/backend-app/internal/telemetry"
+	"github.com/syuhei0519/backend-app/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"

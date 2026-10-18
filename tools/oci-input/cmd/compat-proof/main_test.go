@@ -1,7 +1,7 @@
 package main
 
 import (
-	oci "core-platform/oci-input"
+	oci "github.com/syuhei0519/backend-app/tools/oci-input"
 	"encoding/json"
 	"os"
 	"path/filepath"

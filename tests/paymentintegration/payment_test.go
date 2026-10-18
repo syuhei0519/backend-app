@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/payment"
-	"gitlab.com/platform-engineering-lab/backend-app/internal/paymenttest"
+	"github.com/syuhei0519/backend-app/internal/payment"
+	"github.com/syuhei0519/backend-app/internal/paymenttest"
 )
 
 // One DB/API lifecycle, including one API process restart. Opt-in only.

@@ -3,7 +3,7 @@ package main
 
 import (
 	"bufio"
-	oci "core-platform/oci-input"
+	oci "github.com/syuhei0519/backend-app/tools/oci-input"
 	"encoding/json"
 	"fmt"
 	"io"
