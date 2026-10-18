@@ -1,7 +1,7 @@
 """GitHub-native publication and data-only manifest verification.
 
-GitLab evidence is intentionally a separate protocol. This module does not
-reinterpret a GitLab project/job identity as a GitHub identity.
+Only GHCR images and GitHub release records are accepted; other registries
+are rejected rather than translated into a GitHub identity.
 """
 import base64
 import datetime as dt

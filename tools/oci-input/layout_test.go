@@ -17,7 +17,7 @@ import (
 	"testing"
 )
 
-const source = "https://gitlab.com/syuhei-platform-engineering-lab/backend-app"
+const source = "https://github.com/example-org/backend-app"
 
 var revision = strings.Repeat("a", 40)
 
@@ -133,7 +133,7 @@ func TestValidLayoutBindsSourceAndArchiveAndManifest(t *testing.T) {
 	files := fixture("")
 	p, sum := archive(t, dir, files, nil)
 	out := filepath.Join(dir, "layout")
-	proof, e := Validate(p, sum, out, revision)
+	proof, e := ValidateGitHub(p, sum, out, revision, "example-org/backend-app")
 	if e != nil {
 		t.Fatal("valid OCI refused", e)
 	}
@@ -144,7 +144,7 @@ func TestValidLayoutBindsSourceAndArchiveAndManifest(t *testing.T) {
 	if proof.Digest != index.Manifests[0].Digest || proof.ArchiveSHA256 != sum || proof.Digest == "sha256:"+sum || proof.Platform != "linux/amd64" || proof.LayerCount != 1 || proof.RegistryPush {
 		t.Fatal("archive and image provenance conflated")
 	}
-	if _, e = Validate(p, sum, out, revision); e == nil {
+	if _, e = ValidateGitHub(p, sum, out, revision, "example-org/backend-app"); e == nil {
 		t.Fatal("existing output overwritten")
 	}
 }
@@ -155,7 +155,7 @@ func TestCorruptAndSubstitutedLayoutsNeverPublishDirectory(t *testing.T) {
 			dir := t.TempDir()
 			p, sum := archive(t, dir, fixture(bad), nil)
 			out := filepath.Join(dir, "layout")
-			if _, e := Validate(p, sum, out, revision); e != ErrInput {
+			if _, e := ValidateGitHub(p, sum, out, revision, "example-org/backend-app"); e != ErrInput {
 				t.Fatal("bad OCI accepted")
 			}
 			if _, e := os.Stat(out); !os.IsNotExist(e) {
@@ -177,16 +177,16 @@ func TestArchivePathsLinksDuplicateAndChecksumRefused(t *testing.T) {
 	} {
 		dir := t.TempDir()
 		p, sum := archive(t, dir, fixture(""), hdr)
-		if _, e := Validate(p, sum, filepath.Join(dir, "layout"), revision); e == nil {
+		if _, e := ValidateGitHub(p, sum, filepath.Join(dir, "layout"), revision, "example-org/backend-app"); e == nil {
 			t.Fatal("unsafe archive accepted")
 		}
 	}
 	dir := t.TempDir()
 	p, _ := archive(t, dir, fixture(""), nil)
-	if _, e := Validate(p, strings.Repeat("0", 64), filepath.Join(dir, "layout"), revision); e == nil {
+	if _, e := ValidateGitHub(p, strings.Repeat("0", 64), filepath.Join(dir, "layout"), revision, "example-org/backend-app"); e == nil {
 		t.Fatal("checksum substitution accepted")
 	}
-	if _, e := Validate(filepath.Join(dir, "expired.tar"), strings.Repeat("0", 64), filepath.Join(dir, "layout"), revision); e == nil {
+	if _, e := ValidateGitHub(filepath.Join(dir, "expired.tar"), strings.Repeat("0", 64), filepath.Join(dir, "layout"), revision, "example-org/backend-app"); e == nil {
 		t.Fatal("expired/missing input rescued")
 	}
 }
@@ -202,7 +202,7 @@ func TestArchiveSizeLimitBeforeExtraction(t *testing.T) {
 		t.Fatal(e)
 	}
 	_ = f.Close()
-	if _, e = Validate(p, strings.Repeat("0", 64), filepath.Join(dir, "layout"), revision); e == nil {
+	if _, e = ValidateGitHub(p, strings.Repeat("0", 64), filepath.Join(dir, "layout"), revision, "example-org/backend-app"); e == nil {
 		t.Fatal("oversize input accepted")
 	}
 }
@@ -211,7 +211,7 @@ func TestHarmlessRootDirectoryHeader(t *testing.T) {
 	for _, root := range []string{".", "./"} {
 		dir := t.TempDir()
 		p, sum := archive(t, dir, fixture(""), &tar.Header{Name: root, Typeflag: tar.TypeDir, Mode: 0700})
-		if _, e := Validate(p, sum, filepath.Join(dir, "layout"), revision); e != nil {
+		if _, e := ValidateGitHub(p, sum, filepath.Join(dir, "layout"), revision, "example-org/backend-app"); e != nil {
 			t.Fatal("OCI root directory header refused")
 		}
 	}
@@ -221,7 +221,7 @@ func TestPinnedCraneReaderAcceptsExactValidatedDirectory(t *testing.T) {
 	dir := t.TempDir()
 	p, sum := archive(t, dir, fixture(""), nil)
 	out := filepath.Join(dir, "layout")
-	proof, e := Validate(p, sum, out, revision)
+	proof, e := ValidateGitHub(p, sum, out, revision, "example-org/backend-app")
 	if e != nil {
 		t.Fatal(e)
 	}

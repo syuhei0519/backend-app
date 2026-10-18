@@ -1,4 +1,4 @@
-// Trivy生成CycloneDXのschemaとscan部品対応を検証する。ci/verify-oci-policy.shのsbom-checkが呼ぶ。
+// Trivy生成CycloneDXのschemaとscan部品対応を検証する。ci/github/oci.shのsbom-checkが呼ぶ。
 // 同梱schemasを用い、検証中に任意の外部schemaを取得しない。失敗は固定categoryとして返す。
 package release
 
