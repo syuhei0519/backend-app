@@ -150,3 +150,38 @@ sh learning/monitoring/check-tools.sh .rendered/learning-monitoring
 上記構造拒否によるmerge blockerは解消。backend実装のvalidateも成功し、image checksは進行中。
 本Handoff追記後の最新head CIの最終確認はManagerが行う。Cloudのログ/artifact取得Forbiddenは
 環境ごとの未解決事項として残し、同操作の再試行や権限変更はしていない。
+
+### 独立Review指摘の限定修正（2026-10-18）
+
+backendの修正codeは `83d89b7074bd9cf9ae8befe8c05402df80c2cc3c`、
+platformの修正/Action参照codeは `071345e74b13f10a9b50c57283aab71bb5de7cf5`。
+既存PR54/89とbranchを維持し、Handoff追記を含む最終headは各PRで追える。
+
+- `performance/account/scenario.js`: `noConnectionReuse: true` を指定。
+  iteration guardの外で起こるHTTP/1.1再利用接続のGo transport透過GET再送を防止する。
+  同ディレクトリのtest/READMEに、同一接続2回目GETの受信後に無応答で切断するfixtureを追加した。
+- platform `learning/monitoring/`: state 2にも既存histogram整合条件を要求し、state 1の不完全判定を
+  HTTP増分0へ拡張。queryとdashboardは同一式に更新し、histogram全体欠測/250ms bucket欠測の
+  2 fixtureを追加した。既存RED式、SLO値、負荷予算、APIコード、DB操作は変更していない。
+- 共有guardは公開済み `96e5509757fbfb4bdc7e8b47876cdcc8c288142c` を通常取り込みし、保持した。
+  tree `f0cedfb55d17fdb475559b361f40712e99694669` は元 `fa921cd2aace14f9052b79aa6dc6f37cb07dd274` と同一。
+  `render.go` blob `39289a286ec1f120378c779239d3a70a17894f6e`、
+  `host_namespace_test.go` blob `90c8de9392108077e4ed84ef61c731e4d27a54f7` の一致を確認した。
+  今回guardコードの再実装は行わず、platform PR89/90のAction参照をこの公開SHAへ固定する。
+
+必要差分の自己検証:
+
+| 再現 | 結果 |
+| --- | --- |
+| `python3 -I performance/account/test_scenario.py -v`（固定k6 v2.3.0） | 全3テスト成功。切断fixtureは修正前サーバ25件/k6 15件、修正後は双方15件、各GETが新規接続、HTTP失敗率0 |
+| platform: `python3 learning/monitoring/validate.py --output /tmp/review-sli` | schema/strict lint/12資源境界、dashboard/query一致、10拒否が成功 |
+| 固定promtoolで `/tmp/review-sli/sli-query-tests.yaml` を `test rules` | 既存17＋追加2の計19ケース成功。追加2件は修正前state 2で失敗し、修正後state 1。整合したidleはstate 2を維持 |
+| 固定promtoolで `learning/monitoring/query-tests.yaml` を `test rules` | 既存RED 10ケース成功 |
+| backend `tools/scan-gate`: `go test ./...` / `go build -trimpath -o /tmp/scan-gate .` | 成功。実Pod/未知PodSpecの拒否、CRD boolean宣言と危険default等の境界を維持 |
+| 同scan-gate: `-check-render-only /tmp/review-sli -out /tmp/review-sli-guard.json` | 成功、finding 0件。別途Lane Aの同じ6 CRDs入りfixture renderも成功、finding 0件 |
+| 両repo `git diff --check` | 成功 |
+
+promtoolは上記 `check-tools.sh` と同じ固定Prometheus imageの `/bin/promtool` を使い、
+`--network none` でfixtureをread-only mountした。既存実Account/Postgres成功記録は維持し、
+今回の2件では実DB試験を再実施していない。公開後の最新required CIと独立Reviewは未確認。
+実cluster受入、live SLI/負荷、手動workflowは引き続き後続担当の範囲。merge/cluster操作は実施していない。
