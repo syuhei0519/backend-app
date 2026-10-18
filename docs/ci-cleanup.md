@@ -13,9 +13,13 @@
 
 ## 観察結果
 
-既存の CI job 名、security checks、署名・digest・SBOM の拒否条件を維持する。
+既存の CI job 名、security checks、由来・digest・SBOM の拒否条件を維持する。
 検証コマンドは [CI 文書](ci-documentation.md)。実行結果は今回の PR 本文に記録する。
 実 cluster 操作、権限設定、Bot の導入や自動更新の開始は行わない。
+
+`bash ci/github/test.sh`、gofmt、`go vet ./...`、`go test -race ./...`、server / order-server build は成功。
+共通配置処理の正常・既存ディレクトリ・不正 module・未指定の拒否を確認した。
+Renovate 44.167.1 の公式抽出器による正負 fixture と3 repoの workflow の抽出も成功。
 
 ## 学び
 
