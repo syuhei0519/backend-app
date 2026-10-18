@@ -26,6 +26,50 @@ func nodeFields(n *yaml.Node) map[string]*yaml.Node {
 	return m
 }
 
+// Only OpenAPI properties maps at the CRD schema entrypoints declare fields.
+// Keep traversing defaults/examples and the rest of the CRD as ordinary data.
+func crdSchemaProperties(root *yaml.Node) map[*yaml.Node]bool {
+	properties := map[*yaml.Node]bool{}
+	if root.Kind != yaml.DocumentNode || len(root.Content) != 1 {
+		return properties
+	}
+	m := nodeFields(root.Content[0])
+	if m["kind"] == nil || m["kind"].Value != "CustomResourceDefinition" || m["apiVersion"] == nil || (m["apiVersion"].Value != "apiextensions.k8s.io/v1" && m["apiVersion"].Value != "apiextensions.k8s.io/v1beta1") {
+		return properties
+	}
+	var schema func(*yaml.Node, int)
+	schema = func(n *yaml.Node, depth int) {
+		if depth > 64 || n == nil || n.Kind != yaml.MappingNode {
+			return
+		}
+		fields := nodeFields(n)
+		if p := fields["properties"]; p != nil && p.Kind == yaml.MappingNode {
+			properties[p] = true
+			for i := 1; i < len(p.Content); i += 2 {
+				schema(p.Content[i], depth+1)
+			}
+		}
+		for _, key := range []string{"items", "additionalProperties", "not"} {
+			schema(fields[key], depth+1)
+		}
+		for _, key := range []string{"allOf", "anyOf", "oneOf"} {
+			if list := fields[key]; list != nil && list.Kind == yaml.SequenceNode {
+				for _, item := range list.Content {
+					schema(item, depth+1)
+				}
+			}
+		}
+	}
+	spec := nodeFields(m["spec"])
+	if versions := spec["versions"]; versions != nil && versions.Kind == yaml.SequenceNode {
+		for _, version := range versions.Content {
+			schema(nodeFields(nodeFields(version)["schema"])["openAPIV3Schema"], 0)
+		}
+	}
+	schema(nodeFields(spec["validation"])["openAPIV3Schema"], 0)
+	return properties
+}
+
 // A *_FILE value is a pointer only when this same container mounts an actual
 // Secret volume read-only at its canonical absolute path. A suffix alone never
 // exempts an environment value from the plaintext gate.
@@ -92,6 +136,7 @@ func inspectYAML(data []byte, file string) ([]Finding, error) {
 	d := yaml.NewDecoder(bytes.NewReader(data))
 	findings := []Finding{}
 	allowedFileEnv := map[*yaml.Node]bool{}
+	schemaProperties := map[*yaml.Node]bool{}
 	var walk func(*yaml.Node, int) error
 	walk = func(n *yaml.Node, depth int) error {
 		if depth > 64 || n.Kind == yaml.AliasNode {
@@ -120,7 +165,15 @@ func inspectYAML(data []byte, file string) ([]Finding, error) {
 			// Walk every mapping, including unknown/hidden PodSpecs. Like the
 			// privileged boundary, this does not rely on workload kind or image.
 			for _, key := range []string{"hostNetwork", "hostPID", "hostIPC"} {
-				if v := m[key]; v != nil && (v.Kind != yaml.ScalarNode || v.Tag != "!!bool" || !strings.EqualFold(v.Value, "false")) {
+				v := m[key]
+				if schemaProperties[n] {
+					definition := nodeFields(v)
+					if typ := definition["type"]; typ != nil && typ.Tag == "!!str" && typ.Value == "boolean" {
+						// A declaration is not a Pod value; a default still sets one.
+						v = definition["default"]
+					}
+				}
+				if v != nil && (v.Kind != yaml.ScalarNode || v.Tag != "!!bool" || !strings.EqualFold(v.Value, "false")) {
 					add("LOCAL-HOST-NAMESPACE")
 				}
 			}
@@ -165,6 +218,7 @@ func inspectYAML(data []byte, file string) ([]Finding, error) {
 			return nil, errors.New("render YAML parse failed")
 		}
 		allowedFileEnv = secretFileReferences(&n)
+		schemaProperties = crdSchemaProperties(&n)
 		if err = walk(&n, 0); err != nil {
 			return nil, err
 		}
