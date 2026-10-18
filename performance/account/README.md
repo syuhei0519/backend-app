@@ -75,3 +75,35 @@ workflowは入力URLを受け取らず、この隔離構成だけを手動実行
 SLIはplatform-gitops `learning/monitoring/SLI.md` の同じ5m窓で比較する。
 短い30秒負荷と5mの背景通信は区別し、UTC窓とtarget_infoの対象revisionを揃える。
 k6はclient時間ms、SLIはserver時間秒であり、数値の一致やrun単位のmetric分離は保証しない。
+
+## Issue15のlatency負例
+
+`latency.py run` はloopback guardを共有するPython標準ライブラリhelper。
+27 GET＋3 POSTを1 req/s・並列1・timeout2秒・retry/redirectなしで送る（本体上限30要求）。
+POSTのheaders後、bodyを400ms遅らせるため既存middlewareのserver時間に含まれる。
+コード性能退行を再現するものではなく、合成入力遅延で250ms bucket違反を作る。
+
+```sh
+python3 performance/account/latency.py run --target http://127.0.0.1:18080 \
+  --revision "$CONFIRMED_ACCOUNT_SOURCE_SHA" --output .build/account-latency
+# gateを評価・記録してから別操作で後片付けする。
+python3 performance/account/latency.py cleanup .build/account-latency/cleanup.json
+```
+
+後片付けは別予算で最大3 GET＋3 DELETE、合計最大36 HTTP要求。POSTが返した専用合成行の
+id/name/emailをGET照合してから削除し、既存行を走査しない。異なるidentityなら削除拒否。
+`cleanup.json` はmode0600のlocal回復情報。公開artifactに含めない。
+POST応答が不確実なら再送や広い一覧削除を行わず、正確な専用identityを手動確認する。
+summaryは本文/行id/内部ログを含まない。負荷とcleanupのUTC窓を分け、cleanupをSLI成功要求に数えて薄めない。
+
+```sh
+python3 -I performance/account/test_latency.py -v
+CGO_ENABLED=0 go build -trimpath -o .build/performance/server ./cmd/server
+chmod 755 .build/performance/server
+python3 -I performance/account/isolated.py --binary .build/performance/server \
+  --profile latency --output .build/account-latency-isolated
+```
+
+実DB試験は既存使い捨てfixtureに限定し、既存normal/mixedの再試験をせずlatencyだけ実行可能。
+server-summaryは3 POSTの201とserver250ms超を確認して集計だけを残し、sentinel保持と所有fixture削除も検査する。
+Cloudで27 GET200/3 POST201・server最小401msを確認した。kindでの同時revision計測・Analysis abort/復帰は別担当の未確認項目。

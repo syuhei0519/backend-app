@@ -59,6 +59,8 @@ jobs:
           cache: false
       - name: Policy and boundary tests
         run: bash ci/github/test.sh
+      - name: Account delayed-input helper tests
+        run: python3 -I performance/account/test_latency.py -v
       - name: Backend validation
         run: |
           test -z "$(gofmt -l .)"

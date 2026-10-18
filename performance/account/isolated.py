@@ -20,6 +20,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, required=True, help='Account cmd/server binary built from this checkout')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--profile', choices=['existing', 'latency'], default='existing')
     args = parser.parse_args()
     binary = args.binary.resolve(strict=True)
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
@@ -65,7 +66,7 @@ def main():
                      '--security-opt=no-new-privileges', '--user', '10001:10001', '--memory', '256m',
                      '--mount', f'type=bind,source={binary},target=/server,readonly',
                      '--env', f'DATABASE_URL=postgres://postgres@{db}:5432/postgres?sslmode=disable',
-                     '--env', 'LOG_LEVEL=error', '--entrypoint', '/server']
+                     '--env', 'LOG_LEVEL=' + ('info' if args.profile == 'latency' else 'error'), '--entrypoint', '/server']
             docker('create', '--name', migration, *flags, RUNTIME, 'migrate')
             created.append(migration)
             docker('start', migration)
@@ -94,11 +95,29 @@ def main():
             else:
                 raise RuntimeError('disposable API readiness failed (not skipped)')
             args.output.mkdir(parents=True, exist_ok=False)
-            for profile in ['normal', 'mixed-4xx']:
+            for profile in ([] if args.profile == 'latency' else ['normal', 'mixed-4xx']):
                 subprocess.run([sys.executable, str(ROOT / 'performance/account/run.py'),
                                 '--target', f'http://127.0.0.1:{port}', '--revision', revision,
                                 '--rate', '1', '--duration', '30', '--profile', profile,
                                 '--output', str(args.output / profile)], check=True)
+            if args.profile == 'latency':
+                directory = args.output / 'latency'
+                helper = ROOT / 'performance/account/latency.py'
+                try:
+                    subprocess.run([sys.executable, str(helper), 'run', '--target', f'http://127.0.0.1:{port}',
+                                    '--revision', revision, '--output', str(directory)], check=True)
+                    # This disposable server receives only this scenario. Retain aggregates,
+                    # never application log lines or synthetic row identities.
+                    entries = [json.loads(line) for line in docker('logs', app).splitlines() if line.startswith('{')]
+                    posts = [e for e in entries if e.get('msg') == 'request completed' and e.get('method') == 'POST']
+                    assert len(posts) == 3 and all(e.get('status') == 201 and e['duration_ms'] >= 250 for e in posts)
+                    (directory / 'server-summary.json').write_text(json.dumps(dict(
+                        successful_posts=len(posts), minimum_server_ms=min(e['duration_ms'] for e in posts),
+                        synthetic_input_delay_ms=400), indent=2) + '\n')
+                finally:
+                    if (directory / 'cleanup.json').exists():
+                        subprocess.run([sys.executable, str(helper), 'cleanup', str(directory / 'cleanup.json')], check=True)
+                        (directory / 'cleanup.json').unlink()
             if sql('SELECT id,name,email FROM accounts ORDER BY id') != before:
                 raise RuntimeError('sentinel data changed')
         finally:
@@ -107,7 +126,7 @@ def main():
                 docker('rm', '--force', '--volumes', name)
             if net_created:
                 docker('network', 'rm', network)
-    print('PASS real Account/Postgres: normal + mixed-4xx, sentinel preserved, owned fixtures removed')
+    print('PASS real Account/Postgres: ' + args.profile + ', sentinel preserved, owned fixtures removed')
 
 
 if __name__ == '__main__':
