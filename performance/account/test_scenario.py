@@ -93,6 +93,54 @@ class Guard(unittest.TestCase):
             server.server_close()
             thread.join()
 
+    def test_http11_disconnect_does_not_exceed_budget(self):
+        requests = []
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = 'HTTP/1.1'
+
+            def setup(self):
+                super().setup()
+                self.received = 0
+
+            def do_GET(self):
+                self.received += 1
+                requests.append(self.received)
+                if self.received == 2:
+                    # Receive the reused GET, then close without a response.
+                    # Go transport can invisibly retry this idempotent request.
+                    self.close_connection = True
+                    return
+                self.send_response(200)
+                self.send_header('Content-Length', '2')
+                self.end_headers()
+                self.wfile.write(b'[]')
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / 'disconnect'
+                result = subprocess.run([
+                    sys.executable, str(ROOT / 'run.py'),
+                    '--target', f'http://127.0.0.1:{server.server_port}',
+                    '--revision', SHA, '--rate', '5', '--duration', '3',
+                    '--output', str(out)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                metrics = json.loads((out / 'summary.json').read_text())['metrics']
+                self.assertEqual(metrics['http_reqs']['values']['count'], 15)
+                self.assertEqual(len(requests), 15, 'server receives must also stay within budget')
+                self.assertTrue(all(n == 1 for n in requests), 'each GET must use a fresh connection')
+                self.assertEqual(metrics['http_req_failed']['values']['rate'], 0)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -17,7 +17,9 @@ POST/PUT/DELETE、setup/teardownはなく、既存データを生成・更新・
 - constant-arrival-rate、要求を送るiterationは各1 HTTP要求。duration境界でk6が余分なiterationを
   開始した場合はHTTPを送らず `budget_skipped_iterations` に記録する。`iterations` と
   `http_reqs` を同一視せず、実要求数は必ず `http_reqs` で確認する。setup=0、cleanup=0、redirect=0、
-  HTTP retry=0、batchなし。最大要求数=`rate × duration`（上限300）。
+  明示HTTP retry=0、batchなし。`noConnectionReuse: true` で毎回新規接続を使い、
+  HTTP/1.1再利用接続の切断時にGo transportがGETを透過再送することも防ぐ。
+  最大要求数=`rate × duration`（上限300）。
   最大5 VU・各VU同期1要求のため同時接続5以下。到着スケジュールの上限であり、
   OSの遅延を含む任意の1秒区間に厳密5回以下という保証ではない。
 - 要求timeout2秒、終了猶予3秒。新規要求の予定窓は60秒以下、処理完了は最大約63秒。
@@ -55,7 +57,10 @@ python3 -I performance/account/isolated.py --binary .build/performance/server --
 ```
 
 fixture testsは境界・外部URL拒否、実k6対使い捨てHTTP fixtureの正常/400/redirect/500、
-要求数・環境override拒否・guard拒否後の無通信を確認する。実DB試験の代替とはしない。
+要求数・環境override拒否・guard拒否後の無通信を確認する。
+HTTP/1.1の同一接続2回目GETを受信後に無応答で切断するfixtureでも、5 req/s×3秒の
+サーバ実受信数とk6 `http_reqs` がともに15となり、接続が再利用されないことを確認する。
+修正前は同じfixtureでサーバ25件/k6 15件となった。実DB試験の代替とはしない。
 `isolated.py` は固定imageの使い捨てPostgres、migration、Account binaryだけを使う。
 専用Docker bridge network、DB非公開、APIのloopback動的portのみ。外部負荷先/telemetry exporterを
 設定しない（network自体はegress隔離を保証しない）。Dockerはローカルsocket固定。

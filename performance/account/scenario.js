@@ -19,6 +19,9 @@ export const options = {
     executor: 'constant-arrival-rate', rate: c.rate, timeUnit: '1s',
     duration: `${c.duration}s`, preAllocatedVUs: 5, maxVUs: 5, gracefulStop: '3s',
   } },
+  // A reused HTTP/1.1 connection can trigger an invisible Go transport GET retry.
+  // Fresh connections keep server receives within the iteration request budget.
+  noConnectionReuse: true,
   maxRedirects: 0, batch: 1, batchPerHost: 1, discardResponseBodies: true,
   insecureSkipTLSVerify: false, throw: false,
   tags: { test_label: c.label, target_revision: c.revision, profile: c.profile },
