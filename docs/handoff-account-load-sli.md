@@ -119,4 +119,10 @@ versionはtarget_info、HTTP系列はjob/instanceにあり、run識別labelは�
 4. default branch導入後に手動workflowを確認。独立Test/ReviewはManagerが別担当へ委任し、
    最新required CIと全体ACを確認してmerge判断する。実装者はmergeしない。
 
-現時点で拒否・保留中の権限操作はない。Cloud担当範囲に未解消の阻害要因はない。
+後続CI確認: platform PR #89はpolicy/boundary、render、monitoring、schemaのstepが成功したが、
+`Source and rendered security checks` がexit 2、required `ci-result` も失敗した。
+詳細ログ取得と公開security artifact取得はいずれもForbiddenで拒否され、再試行していない。
+失敗原因は未特定であり、scanner DB/実行不備やfindingを推測して成功扱いにしない。
+ManagerがGitHub UI等の正規アクセスで当該security失敗を確認するまでmerge判断はblocked。
+root CI/security方針/権限の変更や迂回は行っていない。backend最新headのCIは進行中。
+実装と担当Cloud自己検証は完了。未解消の阻害要因はこのrequired CI失敗と詳細取得拒否。
