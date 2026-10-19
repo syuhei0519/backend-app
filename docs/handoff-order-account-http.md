@@ -68,7 +68,7 @@ ORDER_PAYMENT_DISPOSABLE_TEST=1 go test -count=1 -run '^TestOrderPaymentLifecycl
 
 既存APIの正常性と新契約の意図的変更を分けた。旧B1の「不存在Accountで201」は維持対象ではなく、#7で422へ変更したことをREADME/API/OpenAPI/testコメントに残した。Account providerのコード/DB schemaと既存Order GET/Payment契約は維持。
 
-失敗履歴: 初回環境確認でPATH上の `/usr/bin/go version` はGo言語toolchainではなく `Unknown option: version`。既存activate.shでGo 1.27.1へ切替後に上記検証を実施。初期checkoutは指定開始SHAと異なり、指定SHAをfetchしてfeature branchを作成した。上記実装の実行テスト失敗・再試行による修復はなし。既存Issue/PRの過去履歴は変更/上書きしない。
+失敗履歴: 初回環境確認でPATH上の `/usr/bin/go version` はGo言語toolchainではなく `Unknown option: version`。既存activate.shでGo 1.27.1へ切替後に上記検証を実施。初期checkoutは指定開始SHAと異なり、指定SHAをfetchしてfeature branchを作成した。上記実装の実行テスト失敗・再試行による修復はなし。既存Issue/PRの過去履歴は変更/上書きしない。PR作成後のCLI本文編集は旧ghのProjects classic GraphQLエラー、metadata取得は未対応baseRefOid指定で失敗した。本文はREST PATCHで反映し、REST GETでDraft/open・指定base/headを確認した（コード/実測結果への影響なし）。
 
 未検証/残担当: 独立Review、最新headのrequired CI/security結果、実clusterのDNS/Service/EndpointSlice/NetworkPolicy/実imageID、独立Account OS processのkill、GHCR公開・人間承認、merge、issue全体完了は本自己検証で主張しない。CIの操作・rerun/dispatchは行わず、Managerが現在headを確認する。ローカルTrivyは未導入でsecurity scanは既存CIへ委ねる。本機能のCloud受入に新規GHCR公開は必要ない。
 
