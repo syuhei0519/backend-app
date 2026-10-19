@@ -107,3 +107,23 @@ fresh subprocess 3ケースとdestination/identity回帰は成功（package 4.06
 学び: `WithHeaders({})` のような明示optionsは送信設定を上書きしても、その前に走るSDK env parserのログを防げない。export後の属性検査に加え、fresh processで初期化stdout/stderrを捕捉する必要がある。新しい独立Reviewと現head CIの確認はManager担当。追加の実cluster/公開/merge/Secrets/権限操作はしていない。
 
 限定修正SHAでの実export再確認: 23.436秒で成功、12,355 bytes、5ケース各4spanの同一trace/親子/時間/属性検査が成功。HTTPは正常201/4ms、不明422/1ms、下流error503/1ms、timeout504/2.001秒、Collector停止中201/7ms、復旧201/3ms。成功trace `f11bb8940f2449ac840ec43348eb73fc` と復旧trace `ab2ab298179a43a9a06b3209795603d6` を実fileから確認した。失敗時書込0、機密属性なし、作成container/processはcleanupし残存なし。この修正作業中のテスト失敗はなし。初回独立Reviewのstderr漏出指摘は上記修正の起点として残す。PRは [#58](https://github.com/syuhei0519/backend-app/pull/58) のままDraftで、再Review/現head CIは未確認。
+
+### 2回目の限定修正: queue fixtureの継承env隔離
+
+Managerから、元のstderr機密漏出P2は独立再検証で解消した一方、head `915c6da819aa2baf28425772e6ab7eabda29f56d` の両image CIがqueue試験で `unsupported Order telemetry environment` により失敗したと受領した。queue fixtureが継承OTEL設定を隔離せず、追加したproduction guardを呼んだのが再現可能な原因。CIで実際に継承された具体的な変数は未特定であり、下記再現用の変数がCIにもあったとは断定しない。初回・1回目修正の成功証拠と失敗履歴をそのまま保持する。
+
+修正commit: `030bb811437faeda1480189ab9e91614abcdd22a`。変更は `internal/ordertrace/trace_test.go` のみ。`TestFullQueueDoesNotBlockAndShutdownBudget` の冒頭で、継承 `OTEL_EXPORTER_OTLP_*` をfixtureのtestスコープだけ `t.Setenv` で空にし、その後fixture所有loopback endpointを設定する。終了時はGo test cleanupで元の値へ戻る。実環境のVariables/Secretsの削除、production guardの無効化、productionの環境値変更は行わない。
+
+追加回帰 `TestQueueFixtureWithInheritedExporterEnvironment` は、競合するtrace endpoint・不正header・不正timeoutを合成で与え、子testで既存queue/終了予算試験を実行する。試験後は親testの設定が復元されていることも確認する。実際の設定値はログへ出さない。
+
+```sh
+git checkout 030bb811437faeda1480189ab9e91614abcdd22a
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318 go test -count=1 -run '^TestFullQueueDoesNotBlockAndShutdownBudget$' -v ./internal/ordertrace
+go test -race -count=1 -v ./internal/ordertrace
+go vet ./internal/ordertrace
+git diff --check
+```
+
+結果: 継承env付きの再現コマンドは成功（5.008秒）。通常queue、fresh subprocess 3ケース、継承env隔離/復元を含むpackage raceは成功（14.110秒）。vet/diffも成功。queue生成は1秒以内・終了6秒以内の既存assertを維持。今回の修正作業中のテスト失敗はなし。
+
+実HTTP/DB/Collectorの成功証拠は変更のないproduction実装 `a7510f9de6c07c8abfd580d5bd74e74b8e62bde0` の23.436秒/12,355 bytesの検証を再利用し、全実試験は繰り返さなかった。新しいcontainerは作成していない。現headのrequired/image CIと独立Reviewは未確認でManager担当。PR #58をDraftのまま更新し、merge/公開/dispatch/rerunは行わない。
