@@ -35,6 +35,14 @@ func TestDestinationAndOrderIdentity(t *testing.T) {
 }
 
 func TestFullQueueDoesNotBlockAndShutdownBudget(t *testing.T) {
+	// This fixture owns its exporter. Ignore inherited OTLP settings only for
+	// this test; t.Setenv restores each value without changing production Init.
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(key, "OTEL_EXPORTER_OTLP_") {
+			t.Setenv(key, "")
+		}
+	}
 	entered := make(chan struct{}, 1)
 	release := make(chan struct{})
 	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -151,5 +159,24 @@ func TestInitEnvironmentSubprocess(t *testing.T) {
 				t.Fatal("unexpected initialization stderr (output withheld)")
 			}
 		})
+	}
+}
+
+// Exercise the queue fixture under conflicting inherited exporter settings and
+// verify that its cleanup restores the caller's environment.
+func TestQueueFixtureWithInheritedExporterEnvironment(t *testing.T) {
+	inherited := map[string]string{
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://127.0.0.1:4318",
+		"OTEL_EXPORTER_OTLP_TRACES_HEADERS":  "Authorization=Bearer%PRIVATE_MARKER",
+		"OTEL_EXPORTER_OTLP_TIMEOUT":         "PRIVATE_MARKER",
+	}
+	for key, value := range inherited {
+		t.Setenv(key, value)
+	}
+	t.Run("queue", TestFullQueueDoesNotBlockAndShutdownBudget)
+	for key, value := range inherited {
+		if os.Getenv(key) != value {
+			t.Fatal("queue fixture did not restore inherited environment")
+		}
 	}
 }
