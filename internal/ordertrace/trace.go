@@ -31,6 +31,14 @@ func Init(ctx context.Context, version string, logger *slog.Logger) (*sdktrace.T
 		if err != nil || u.Scheme != "http" || u.Opaque != "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || (u.Path != "" && u.Path != "/") || (u.Host != "otel-collector.observability.svc.cluster.local:4318" && u.Hostname() != "localhost" && u.Hostname() != "127.0.0.1") || !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(version) || os.Getenv("POD_NAMESPACE") != "order" || os.Getenv("DEPLOYMENT_ENVIRONMENT") != "local" {
 			return nil, errors.New("invalid Order telemetry configuration")
 		}
+		// SDK v1.47 parses environment before applying explicit options and may
+		// log malformed values. Reject unsupported trace exporter input before
+		// that parser runs; leave other signals and process logging untouched.
+		for _, suffix := range []string{"HEADERS", "CERTIFICATE", "CLIENT_CERTIFICATE", "CLIENT_KEY", "INSECURE", "COMPRESSION", "PROTOCOL", "TIMEOUT", "TRACES_ENDPOINT", "TRACES_HEADERS", "TRACES_CERTIFICATE", "TRACES_CLIENT_CERTIFICATE", "TRACES_CLIENT_KEY", "TRACES_INSECURE", "TRACES_COMPRESSION", "TRACES_PROTOCOL", "TRACES_TIMEOUT"} {
+			if os.Getenv("OTEL_EXPORTER_OTLP_"+suffix) != "" {
+				return nil, errors.New("unsupported Order telemetry environment")
+			}
+		}
 		exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint), otlptracehttp.WithURLPath("/v1/traces"), otlptracehttp.WithHeaders(map[string]string{}), otlptracehttp.WithTimeout(3*time.Second), otlptracehttp.WithRetry(otlptracehttp.RetryConfig{Enabled: false}))
 		if err != nil {
 			return nil, errors.New("Order trace exporter initialization failed")
