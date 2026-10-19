@@ -1,0 +1,41 @@
+# Disposable Cloud fixture only. Pinned existing platform Collector; no SaaS/Secret.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+        max_request_body_size: 1048576
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 192
+    spike_limit_mib: 48
+  filter/resource_contract:
+    error_mode: propagate
+    traces:
+      span:
+        - 'resource.attributes["deployment.environment.name"] != "local"'
+        - 'resource.attributes["k8s.namespace.name"] != "account" and resource.attributes["k8s.namespace.name"] != "order"'
+  batch:
+    timeout: 1s
+    send_batch_size: 64
+    send_batch_max_size: 64
+exporters:
+  file:
+    path: /evidence/traces.jsonl
+    format: json
+    append: true
+    flush_interval: 100ms
+  nop: {}
+service:
+  telemetry:
+    logs: {level: error, encoding: json}
+    metrics: {level: none}
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/resource_contract, batch]
+      exporters: [file]
+    metrics:
+      receivers: [otlp]
+      exporters: [nop]

@@ -17,7 +17,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/syuhei0519/backend-app/internal/order"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 const Timeout = 2 * time.Second
@@ -66,9 +70,13 @@ func ValidateOrigin(origin string) error {
 type Client struct {
 	origin string
 	http   *http.Client
+	tracer trace.Tracer
 }
 
 func New(origin string) (*Client, error) {
+	return NewWithTracer(origin, noop.NewTracerProvider().Tracer("order-backend"))
+}
+func NewWithTracer(origin string, tracer trace.Tracer) (*Client, error) {
 	if err := ValidateOrigin(origin); err != nil {
 		return nil, err
 	}
@@ -77,15 +85,32 @@ func New(origin string) (*Client, error) {
 	// Disable reuse so net/http cannot implicitly replay a GET on a stale pooled
 	// connection. Each check is one bounded request without application retries.
 	transport.DisableKeepAlives = true
-	return &Client{origin: origin, http: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &Client{origin: origin, tracer: tracer, http: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 func (c *Client) Close() { c.http.CloseIdleConnections() }
-func (c *Client) Check(ctx context.Context, id int64) error {
+func (c *Client) Check(ctx context.Context, id int64) (result error) {
 	if id < 1 {
 		return order.ErrInvalid
 	}
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
+	ctx, span := c.tracer.Start(ctx, "GET /api/accounts/{id}", trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(attribute.String("http.request.method", "GET"), attribute.String("http.route", "/api/accounts/{id}")))
+	defer func() {
+		if result != nil {
+			kind := "account_unavailable"
+			switch {
+			case errors.Is(result, order.ErrAccountTimeout):
+				kind = "timeout"
+			case errors.Is(result, order.ErrAccountNotFound):
+				kind = "account_not_found"
+			case errors.Is(result, order.ErrAccountBadResponse):
+				kind = "account_bad_response"
+			}
+			span.SetAttributes(attribute.String("error.type", kind))
+			span.SetStatus(codes.Error, "account check failed")
+		}
+		span.End()
+	}()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.origin+"/api/accounts/"+strconv.FormatInt(id, 10), nil)
 	if err != nil {
 		return order.ErrAccountUnavailable
@@ -100,6 +125,7 @@ func (c *Client) Check(ctx context.Context, id int64) error {
 		return transportError(ctx, err)
 	}
 	defer res.Body.Close()
+	span.SetAttributes(attribute.Int("http.response.status_code", res.StatusCode))
 	// Classify status without trusting or echoing an error body. Closing also
 	// prevents an unbounded error body from delaying the status response.
 	switch {
