@@ -3,7 +3,7 @@
 ## 目的
 
 - 対象: [backend-app #15](https://github.com/syuhei0519/backend-app/issues/15)、B系統第2工程。Refs #15（IssueはCloseしない）。実装、必要なCloud自己検証、日本語Draft PRまで。
-- branch: `feat/15-order-account-tracing`。固定開始main: `0a55a61e55badebc2e1fb688270c7a21b315a815`（PR #57 merge）。固定実装: `f450dec65bd7ea48a2e1f03b67667faf90e79789`。後続のHandoff commitは文書のみ。
+- branch: `feat/15-order-account-tracing`。固定開始main: `0a55a61e55badebc2e1fb688270c7a21b315a815`（PR #57 merge）。初回固定実装: `f450dec65bd7ea48a2e1f03b67667faf90e79789`、初回後続はHandoff文書。独立Review後の限定修正SHAと結果は末尾追記。
 - 正本: ai-development-system `42521c0bd2a1220ef01ed009455a9372708f8314` の `agents/implementation.md`、`workflows/single-issue.md`、`templates/handoff.md` を確認。checkoutとworkspaceの `.agents/skills` は存在せず追加技能なし。
 - 最初に固定mainの `docs/handoff-order-account-http.md` と `docs/order-account-communication.md` を読んだ。#7が成立させた作成→存在確認→Account GET→DB、W3C/request ID、2秒child/5秒全体budget、失敗時no-writeと既存GET/Payment維持を入力として利用した。Account側のserver/DB計装・OTLP exporterを再利用し、Orderで不足していたserver/client spanとexportだけを追加した。
 - 必要AC: 成功の同一traceと親子関係、下流error/timeoutの失敗statusとlatency、機密非出力、Collector停止中もAPI継続と回復後export。対象はOrder作成→Account→DBの1経路。
@@ -83,3 +83,27 @@ timeout trace `43d783761e734afea19f3c37a74df2d1` は同じ4段構造、各span E
 Collectorの受信成功やソースoverlayのNewRelic=trueだけでは閲覧証拠にならない。既存固定Collectorのfile exporterで実OTLP bytesを読み、parent IDを照合する方式で無料・一時的に必要ACを観察できた。file exporterはalphaであり、本番の可視化基盤や耐久保存としては提案しない。
 
 次はManagerが独立Reviewと最新head CIを確認しmergeを判断する。Draft PRの自己検証は独立Reviewの代替ではない。main push/merge、approval代行、dispatch/rerun、公開、実cluster、Secrets/Ruleset/権限変更、追加API課金は実施していない。
+
+### PR #58 独立Review後の限定修正
+
+独立Reviewから、初回headの通常実trace/Collector停止復旧はPASS（12,335 bytes、停止中201/8ms）だが、Order exporter初期化前の暗黙env解析でstderrに機密値が出得るP2 blockingを受領した。初回のtrace属性検査ではこの初期化stderrを検証していなかった。既存の成功記録はその範囲の証拠として保持し、修正結果をここに追記する。
+
+修正commit: `a7510f9de6c07c8abfd580d5bd74e74b8e62bde0`。`internal/ordertrace/trace.go` で、pin済みSDK v1.47.0がoptions適用前に読む汎用/trace用のendpoint override、headers、TLS、compression/protocol、timeout設定を、`otlptracehttp.New` 呼出し前に拒否する。許可する明示 `OTEL_EXPORTER_OTLP_ENDPOINT` は従来の検証を維持。拒否時は値やkeyを含まない `unsupported Order telemetry environment` だけを返す。環境変数を削除/変更せず、SDK internal loggerを無効化せず、metrics/logsの別signal設定やAccount/Paymentを変更しない。export無効時はSDK parserを呼ばない。
+
+運用上、Orderで明示endpoint以外のSDK用exporter設定を追加しても、黙ってoverrideせず起動を拒否する。これは当初の「暗黙headers/TLSを受け付けない」契約をSDK parserの前で確実にする変更。新しい認証設定の導入は今回の対象外。
+
+fresh subprocess回帰は `internal/ordertrace/trace_test.go` に追加。SDK global logger/error handlerがまだ変更されていない別processごとに、合成の不正 `OTEL_EXPORTER_OTLP_TRACES_HEADERS`、不正 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`、正常設定を試す。前2件はsanitized errorだけをstderrに出し、secret marker/raw hostがstdout/stderrに無いことを確認。正常設定はstderr空かつloopback receiverが実OTLP bytesを受け、trace bytes/headersにもmarkerが無いことを確認する。失敗時も捕捉したraw出力をテストログへ流さない。
+
+```sh
+git checkout a7510f9de6c07c8abfd580d5bd74e74b8e62bde0
+go test -race -count=1 -run 'TestInitEnvironmentSubprocess|TestDestinationAndOrderIdentity' -v ./internal/ordertrace
+go vet ./internal/ordertrace
+ORDER_DISPOSABLE_TEST=1 TRACE_EVIDENCE_DIR=/tmp/issue15-traces-initfix go test -count=1 -v ./tests/distributedtrace
+git diff --check
+```
+
+fresh subprocess 3ケースとdestination/identity回帰は成功（package 4.060秒）、vet/diffも成功。実Collector再確認の最終値は下記追記。全機能回帰は繰り返さず、既存の6固定要求だけの狭い実export試験を利用する。
+
+学び: `WithHeaders({})` のような明示optionsは送信設定を上書きしても、その前に走るSDK env parserのログを防げない。export後の属性検査に加え、fresh processで初期化stdout/stderrを捕捉する必要がある。新しい独立Reviewと現head CIの確認はManager担当。追加の実cluster/公開/merge/Secrets/権限操作はしていない。
+
+限定修正SHAでの実export再確認: 23.436秒で成功、12,355 bytes、5ケース各4spanの同一trace/親子/時間/属性検査が成功。HTTPは正常201/4ms、不明422/1ms、下流error503/1ms、timeout504/2.001秒、Collector停止中201/7ms、復旧201/3ms。成功trace `f11bb8940f2449ac840ec43348eb73fc` と復旧trace `ab2ab298179a43a9a06b3209795603d6` を実fileから確認した。失敗時書込0、機密属性なし、作成container/processはcleanupし残存なし。この修正作業中のテスト失敗はなし。初回独立Reviewのstderr漏出指摘は上記修正の起点として残す。PRは [#58](https://github.com/syuhei0519/backend-app/pull/58) のままDraftで、再Review/現head CIは未確認。
