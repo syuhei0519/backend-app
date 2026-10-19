@@ -1,19 +1,26 @@
 openapi: 3.1.0
 info:
   title: Order API
-  version: 1.1.0
+  version: 1.2.0
   description: >-
-    Immutable orders for an isolated lab. account_id is a historical reference;
-    it does not guarantee Account existence, ownership or authorization. A positive
-    nonexistent ID is accepted. Deleting an Account retains its Orders. No Account
-    API calls or cross-database foreign keys are used. Authentication is not provided.
+    Immutable orders for an isolated lab. Creation requires Account existence via
+    one bounded GET; unlike B1, unknown Accounts are rejected. Stored account_id
+    remains historical: deleting an Account retains its Orders. Lookup does not
+    guarantee ownership, authorization or atomicity against concurrent deletion.
+    No cross-database foreign keys or authentication are provided.
     Order creation has no idempotency support: a retry after an ambiguous commit can duplicate an order.
 paths:
   /api/orders:
     post:
       operationId: createOrder
       description: >-
-        Commits before responding. Body at most 16384 bytes including whitespace.
+        Validates input, looks up Account, then commits before responding. No DB
+        transaction is held during HTTP. ORDER_ACCOUNT_URL selects a fixed origin;
+        unset returns account_unconfigured. Lookup has a 2-second deadline including
+        DNS/connect/headers/body, with a 5-second overall budget after validation.
+        Earlier cancellation/deadlines propagate. W3C traceparent/tracestate and a
+        validated or generated X-Request-ID propagate to Account; no automatic retry.
+        Body at most 16384 bytes including whitespace.
         All keys required, no unknown or duplicate keys (including escaped spellings).
         Decimal/exponent integer spellings, null, non-object, invalid UTF-8 and trailing
         data are rejected. Content-Type application/json optionally with charset=utf-8.
@@ -49,8 +56,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '422':
+          description: account_not_found; no Order write.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: account_bad_response; no Order write.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '503':
-          $ref: '#/components/responses/Unavailable'
+          description: account_unconfigured, account_unavailable or Order unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '504':
+          description: account_timeout; no Order write.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           $ref: '#/components/responses/Internal'
   /api/orders/{id}:
@@ -208,7 +237,7 @@ components:
           format: int64
           minimum: 1
           maximum: 9223372036854775807
-          description: Historical reference only; nonexistent and deleted accounts permitted.
+          description: Must exist when checked at creation; retained historically after deletion.
         item_code:
           type: string
           pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'

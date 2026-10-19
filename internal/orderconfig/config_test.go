@@ -40,3 +40,22 @@ func TestPaymentURL(t *testing.T) {
 		t.Fatal("unsafe config error")
 	}
 }
+
+func TestAccountURL(t *testing.T) {
+	t.Setenv("LOG_LEVEL", "")
+	t.Setenv("ORDER_HTTP_ADDRESS", "")
+	t.Setenv("ORDER_PAYMENT_URL", "")
+	for _, value := range []string{"", "http://learning-account:8080", "http://127.0.0.1:8080", "http://[::1]:8080"} {
+		t.Setenv("ORDER_ACCOUNT_URL", value)
+		c, err := Load()
+		if err != nil || c.AccountURL != value {
+			t.Fatal("account origin")
+		}
+	}
+	for _, value := range []string{"https://host:8080", "http://host", "http://host:0", "http://host:65536", "http://host:8080/", "http://user:password@host:8080", "http://host:8080?secret=value", "http://host:8080#", "http://bad_host:8080"} {
+		t.Setenv("ORDER_ACCOUNT_URL", value)
+		if _, err := Load(); err == nil || err.Error() != "invalid ORDER_ACCOUNT_URL" {
+			t.Fatal("invalid origin accepted or echoed")
+		}
+	}
+}
