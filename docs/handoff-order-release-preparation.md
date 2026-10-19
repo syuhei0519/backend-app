@@ -7,9 +7,11 @@ System 正本: syuhei0519/ai-development-system@42521c0bd2a1220ef01ed009455a9372
 対象固定 SHA は backend-app `02b1018adaed8352a4651dd7fa8c73437e230296`、
 application-manifest `a4fe78845e2ab1e19d593b8511ca6f28fcd206b3`。
 2026-10-19 の read-only 確認で両 main と一致した。
-保存先は backend-app の `docs/order-release-preparation-c` branch、変更は本ファイルのみ。
-本ファイルの固定 commit は PR head で確認する。コード差分、公開、manifest 値変更、
-Order 有効化、実クラスタ操作、マージは行っていない。#34/#20 は未完了。
+保存先は backend-app の `docs/order-release-preparation-c` branch / Draft PR #56。
+初回は公開準備文書のみだったが、後続指示により publish/propose の status 条件と
+狭い回帰テストを追加した。変更ファイルと検証は末尾追記を参照。
+固定 commit は PR head で確認する。manifest 値変更、Order 有効化、実クラスタ操作、
+マージは行っていない。#34/#20 は未完了。
 
 ## やったこと
 
@@ -183,3 +185,67 @@ Manager 側で既存変数の適用 scope・名前・値と run の評価条件�
 Secrets/Ruleset/権限/変数/workflow は変更していない。
 正式 digest がないため application-manifest #20 の disabled digest 更新も未着手。
 この追記は過去の未実施記録を保存し、その後の実行結果を結ぶもの。
+
+### 追記: skip 伝播の診断と限定修正
+
+目的: Manager 指示により、既存公開ゲートを保持して正常な docs skip が
+publish/propose を止める依存条件の不具合候補を修正する。同じ Draft PR #56 にまとめる。
+過去の attempt 1/2 の skipped 結果は上記のまま保持する。
+
+観察結果の補足: Manager はユーザー提供の非公開画面から repository variables の
+`ENABLE_GHCR_PUBLISH=true`、`ENABLE_MANIFEST_PR=true`、Environment variables なしを
+確認した。設定場所/値の誤り仮説は除外する。画像は Git に保存していない。
+attempt 2 API は push / main / 指定 source SHA、現在 main は同 SHA / protected=true。
+公開 job の steps と check summary は空。job log 取得は storage 側403で停止し、
+迂回していない。実評価時の `github.ref_protected` / vars の値は未取得。
+
+[公式の再実行仕様](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs)
+は元 SHA/ref と起動者権限の保持を規定する。一方、今回参照した公式資料には
+再実行が repository variables の旧値を保持するという根拠はなく、旧値固定を原因とはしない。
+[公式needs仕様](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds)
+と [status関数仕様](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)
+では skip の依存チェーン伝播と、status関数のない if への暗黙 `success()` を説明している。
+`docs skipped → ci-result(always) success → publish skipped` は
+[actions/runner #2205](https://github.com/actions/runner/issues/2205) の報告と同型。
+これを最有力の不具合候補とするが、実 scheduler の式評価値による原因確定はしていない。
+単なる新pushや文書だけのmergeは解決策としない。
+
+やったこと（この追記時点のコード変更）:
+
+- `.github/workflows/ci.yml`: publish の if に `!cancelled()` と
+  validate/image/ci-result 各 result=`success` を追加。propose は `!cancelled()` と
+  publish result=`success` を追加。既存 push/main/ref_protected/各ENABLE変数、needs、
+  Environment、matrix、権限、security checks、Python 側公開拒否は維持。
+- `ci/github/release_test.py`: 実 workflow の対象 job の folded if を読み、限定された
+  AND/比較/boolean/status構文を評価する4契約テストを追加。未知構文/形式は失敗する。
+  必要jobの failure/skipped/cancelled、docs-only、非push/非main/保護なし/変数false・未設定、
+  workflow cancel を拒否。既存Environment/権限/matrix/needsも検査。
+  式をコピーした独立の公開判定は作らず、既存CI harnessからそのまま実行される。
+- `docs/handoff-order-release-preparation.md`: 目的更新と本追記。
+
+Cloud 自己検証:
+
+```sh
+python3 -I ci/github/release_test.py                   # 12 tests OK（既存8 + 新規4）
+python3 -I ci/github/order-release_test.py             # 11 tests OK
+python3 -I ci/github/fixtures/m0/release_test.py       # 19 tests OK
+git diff --check                                      # success
+```
+
+計42テスト成功。Cloud の既存 PyYAML による実 workflow YAML parse も成功。
+テスト自体は標準ライブラリのみで追加依存はない。
+さらに実 workflow 文字列から status関数、各needs成功、push/main/protected、各変数の
+ゲートをそれぞれ1つ除いた10通りのメモリ内 mutation はすべて契約テストが拒否した。
+変更前テキストや自己作成のfixture式だけを検証したものではない。
+
+学び・未確認点: この契約テストは GitHub scheduler を実装/再現するものではない。
+merge後の新 protected main push で公開 job が Environment 承認待ちまで到達するかが
+最終の実 scheduler 確認であり、未検証。必要なレビュー後の merge は Manager が担当。
+失敗/skip/cancel の必要jobを `always()` 単独で通す変更はしていない。
+追加 rerun/dispatch/main変更/実公開/設定変更は行っていない。
+
+workflow の修正mergeで新しい source SHA が生じるため、上記旧sourceの image/tag/digest
+を今後の正式成果物として確定しない。Manager は merge後の main SHA/run/attempt を再固定し、
+両 package と image/SBOM/scan/release記録という既存承認範囲のまま最終結果を確認する。
+旧 attempt の artifact は新 source/run に付け替えない。正式公開後まで #20 の disabled
+values 更新は保留。独立Review・現在CI確認・マージ・人間Environment承認は担当外。

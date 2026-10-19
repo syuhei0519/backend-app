@@ -3,6 +3,7 @@ from pathlib import Path
 import unittest
 import datetime as dt
 import io,zipfile
+import re
 from unittest.mock import patch
 
 spec=importlib.util.spec_from_file_location('release',Path(__file__).with_name('release.py'))
@@ -53,5 +54,93 @@ class Boundary(unittest.TestCase):
         m.validate_record(record,'owner/backend-app','a'*40,123,1)
         for change in ({'workflowRef':'owner/backend-app/.github/workflows/ci.yml@refs/heads/untrusted'},{'imagePolicyPassed':False},{'repository':'other/backend-app'},{'runAttempt':2},{'imageRepository':'registry.gitlab.com/owner/backend-app'}, {'validUntil':(m.now()-dt.timedelta(minutes=1)).isoformat()}, {'validUntil':(m.now()+dt.timedelta(hours=25)).isoformat()}):
             with self.assertRaises(ValueError):m.validate_record({**record,**change},'owner/backend-app','a'*40,123,1)
+
+class WorkflowPublication(unittest.TestCase):
+    """Evaluate the actual workflow's closed conjunction grammar, not a copied gate.
+
+    This is a contract test, not a GitHub scheduler implementation. Unknown YAML
+    layout or expression syntax fails rather than being silently approximated.
+    """
+    @classmethod
+    def setUpClass(cls):
+        cls.workflow=(Path(__file__).resolve().parents[2]/'.github/workflows/ci.yml').read_text()
+
+    def block(self,name):
+        matches=re.findall(r'^  '+re.escape(name)+r':\n(.*?)(?=^  [a-z][a-z-]*:|\Z)',self.workflow,re.M|re.S)
+        self.assertEqual(len(matches),1)
+        return matches[0]
+
+    def condition(self,name):
+        matches=re.findall(r'^    if: >-\n((?:      [^\n]+\n)+)',self.block(name),re.M)
+        self.assertEqual(len(matches),1)
+        return ' '.join(line.strip() for line in matches[0].splitlines())
+
+    def accepts(self,name,context):
+        values=[]
+        for term in self.condition(name).split('&&'):
+            term=term.strip()
+            if term=='!cancelled()':
+                values.append(not context['cancelled'])
+                continue
+            match=re.fullmatch(r"([a-zA-Z_][a-zA-Z0-9_.-]*)(?: == '([^']*)')?",term)
+            self.assertIsNotNone(match,'Unsupported workflow expression: '+term)
+            key,expected=match.groups()
+            actual=context[key]
+            if expected is None:
+                self.assertIs(type(actual),bool)
+                values.append(actual)
+            else:
+                self.assertIs(type(actual),str)
+                values.append(actual==expected)
+        return all(values)
+
+    def allowed(self):
+        return {'cancelled':False,'github.event_name':'push','github.ref':'refs/heads/main',
+                'github.ref_protected':True,'vars.ENABLE_GHCR_PUBLISH':'true',
+                'vars.ENABLE_MANIFEST_PR':'true',**{'needs.'+job+'.result':'success'
+                    for job in ('validate','image','ci-result','publish')}}
+
+    def test_full_ci_and_explicit_status(self):
+        # The graph has a skipped docs ancestor. Only test expression semantics;
+        # protected-main scheduler/publication remains an integration check.
+        self.assertIn('needs: [classify, docs, validate, image]',self.block('ci-result'))
+        self.assertIn('if: always()',self.block('ci-result'))
+        for job in ('publish','propose'):
+            with self.subTest(job=job):
+                self.assertIn('!cancelled()',self.condition(job))
+                self.assertTrue(self.accepts(job,self.allowed()))
+
+    def test_required_results_and_docs_only(self):
+        for job,dependencies in (('publish',('validate','image','ci-result')),('propose',('publish',))):
+            for dependency in dependencies:
+                for result in ('failure','skipped','cancelled'):
+                    with self.subTest(job=job,dependency=dependency,result=result):
+                        self.assertFalse(self.accepts(job,{**self.allowed(),'needs.'+dependency+'.result':result}))
+        # docs-only ci-result may succeed, but no checked image was produced.
+        context={**self.allowed(),'needs.validate.result':'skipped','needs.image.result':'skipped'}
+        self.assertFalse(self.accepts('publish',context))
+        self.assertFalse(self.accepts('propose',{**context,'needs.publish.result':'skipped'}))
+
+    def test_context_and_variable_refusals(self):
+        for job,variable in (('publish','ENABLE_GHCR_PUBLISH'),('propose','ENABLE_MANIFEST_PR')):
+            changes=[('cancelled',True),('github.event_name','pull_request'),
+                     ('github.event_name','workflow_dispatch'),('github.ref','refs/heads/feature'),
+                     ('github.ref','refs/tags/release'),('github.ref_protected',False)]
+            changes.extend(('vars.'+variable,value) for value in ('false',''))
+            for key,value in changes:
+                with self.subTest(job=job,key=key,value=value):
+                    self.assertFalse(self.accepts(job,{**self.allowed(),key:value}))
+
+    def test_dependency_environment_and_permission_contract(self):
+        publish=self.block('publish');propose=self.block('propose')
+        self.assertIn('needs: [validate, image, ci-result]',publish)
+        self.assertIn('needs: publish',propose)
+        self.assertIn('environment: ghcr-publish',publish)
+        self.assertIn('environment: manifest-update',propose)
+        for block in (publish,propose):
+            self.assertIn('service: [backend, order]',block)
+        self.assertIn('    permissions:\n      contents: write\n      packages: write\n',publish)
+        self.assertIn('    permissions:\n      contents: read\n',propose)
+
 
 if __name__=='__main__':unittest.main()
