@@ -62,7 +62,7 @@ func TestInputBoundary(t *testing.T) {
 	for i, body := range bad {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			f := &fakeStore{}
-			w := request(New(order.New(f), f), "POST", "/api/orders", body, "application/json")
+			w := request(New(order.New(f, f), f), "POST", "/api/orders", body, "application/json")
 			if w.Code != 400 || f.calls != 0 || !strings.Contains(w.Body.String(), `"validation_error"`) {
 				t.Fatalf("status=%d calls=%d", w.Code, f.calls)
 			}
@@ -75,7 +75,7 @@ func TestLimitsAndMedia(t *testing.T) {
 		status      int
 	}{{valid, "application/json", 201}, {valid, "application/json; charset=utf-8", 201}, {valid, "application/json; charset=UTF-8", 201}, {valid, "", 415}, {valid, "text/plain", 415}, {valid, "application/json; charset=latin1", 415}, {valid, "application/json; other=x", 415}, {valid + strings.Repeat(" ", MaxBody-len(valid)), "application/json", 201}, {valid + strings.Repeat(" ", MaxBody-len(valid)+1), "application/json", 413}} {
 		f := &fakeStore{}
-		w := request(New(order.New(f), f), "POST", "/api/orders", tt.body, tt.media)
+		w := request(New(order.New(f, f), f), "POST", "/api/orders", tt.body, tt.media)
 		if w.Code != tt.status {
 			t.Fatalf("status %d want %d", w.Code, tt.status)
 		}
@@ -94,7 +94,7 @@ func TestRoutesAndErrors(t *testing.T) {
 		allow        string
 	}{{"GET", "/api/orders/1", 200, ""}, {"GET", "/api/orders/9223372036854775807", 200, ""}, {"GET", "/api/orders/01", 400, ""}, {"GET", "/api/orders/+1", 400, ""}, {"GET", "/api/orders/0", 400, ""}, {"GET", "/api/orders/-1", 400, ""}, {"GET", "/api/orders/9223372036854775808", 400, ""}, {"GET", "/api/orders/1.0", 400, ""}, {"GET", "/api/orders/1e0", 400, ""}, {"GET", "/api/orders", 405, "POST"}, {"HEAD", "/api/orders/1", 405, "GET"}, {"POST", "/api/orders/1", 405, "GET"}, {"DELETE", "/api/orders/1", 405, "GET"}, {"GET", "/api/orders/", 404, ""}, {"GET", "/api/orders/1/x", 404, ""}, {"GET", "//api/orders/1", 404, ""}, {"GET", "/unknown", 404, ""}, {"GET", "/livez", 200, ""}, {"POST", "/readyz", 405, "GET"}} {
 		f := &fakeStore{}
-		w := request(New(order.New(f), f), tt.method, tt.path, "", "")
+		w := request(New(order.New(f, f), f), tt.method, tt.path, "", "")
 		if w.Code != tt.status || w.Header().Get("Allow") != tt.allow {
 			t.Fatalf("%s %s: %d %s", tt.method, tt.path, w.Code, w.Header().Get("Allow"))
 		}
@@ -107,13 +107,13 @@ func TestRoutesAndErrors(t *testing.T) {
 		status int
 	}{{order.ErrNotFound, 404}, {order.ErrUnavailable, 503}, {order.ErrInternal, 500}, {errors.New("private sql dsn"), 500}} {
 		f := &fakeStore{err: tt.err}
-		w := request(New(order.New(f), f), "GET", "/api/orders/1", "", "")
+		w := request(New(order.New(f, f), f), "GET", "/api/orders/1", "", "")
 		if w.Code != tt.status || strings.Contains(w.Body.String(), "private") {
 			t.Fatal("unsafe error mapping")
 		}
 	}
 	f := &fakeStore{}
-	s := New(order.New(f), f)
+	s := New(order.New(f, f), f)
 	if request(s, "GET", "/readyz", "", "").Code != 200 {
 		t.Fatal("ready")
 	}
@@ -122,3 +122,5 @@ func TestRoutesAndErrors(t *testing.T) {
 		t.Fatal("shutdown health")
 	}
 }
+
+func (f *fakeStore) Check(context.Context, int64) error { return nil }

@@ -3,7 +3,9 @@
 Related issue: https://github.com/syuhei0519/backend-app/issues/2
 
 Order is an independent process (`cmd/order-server`) with immutable records.
-It does not modify or call the Account service. Notification, lists,
+It calls Account once before creating a new Order; it never modifies Account.
+See [Order → Account and the B1 contract change](order-account-communication.md).
+Notification, lists,
 updates, deletes, authentication and caller-specific authorization are not provided.
 An optional [Order → Payment endpoint](order-payment-communication.md) calls the
 existing Payment API for an existing Order without updating Order state.
@@ -58,10 +60,16 @@ or credentials. POST has no idempotency key and is never automatically retried b
 the service. A connection failure after commit can leave a created record even
 if the caller did not receive 201; retrying POST can create a duplicate.
 
-`account_id` is a historical reference, **not an existence or ownership guarantee**.
-A positive ID for a nonexistent Account is accepted. No cross-database foreign key
-or Account lookup is used. Deleting an Account retains the Order with its original
-`account_id`; Order never cascades, restricts, creates, updates or deletes Accounts.
+Creation now requires a successful Account lookup (intentional #7 change from
+B1, which accepted nonexistent IDs). Unknown/deleted Accounts return 422
+`account_not_found`; an unset `ORDER_ACCOUNT_URL` returns 503
+`account_unconfigured`, downstream 5xx/transport failure 503 `account_unavailable`,
+timeout 504 `account_timeout`, and invalid responses 502 `account_bad_response`.
+Only creation performs the lookup. Existing Orders retain historical references:
+deleting an Account keeps the original `account_id` readable, without a
+cross-database foreign key. Existence at lookup time is not ownership,
+authorization, or an atomic guarantee against concurrent Account deletion.
+Order never cascades, restricts, creates, updates or deletes Accounts.
 
 `GET /livez` returns 200 while the process is serving. `GET /readyz` checks Order
 DB connectivity and exactly version 1 of `order_schema_migrations` within one
@@ -143,8 +151,9 @@ with label `order-b1-disposable=true`, ephemeral random credentials, loopback-on
 random ports and new anonymous volumes. Account and Order use separate engines.
 It does not connect to, migrate or erase existing/shared databases or volumes.
 
-The tests verify strict real HTTP validation/no writes, missing/deleted Account
-references, Account CRUD/409/404/400, preserved sentinel columns and complete
+The tests verify strict real HTTP validation/no writes, rejection of new missing/deleted
+Account references and retention of existing references (intentional #7 change),
+Account CRUD/409/404/400, preserved sentinel columns and complete
 Account migration history, two orderly Order process restarts with changed PIDs,
 a DB restart retaining that test container's volume, startup/migration reruns,
 shutdown health and DB outage 503. Migration tests cover fresh/no-op/concurrent

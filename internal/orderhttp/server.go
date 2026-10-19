@@ -1,4 +1,4 @@
-// Package orderhttp implements the strict Order wire contract independently of Account.
+// Package orderhttp implements the strict Order wire contract.
 package orderhttp
 
 import (
@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/syuhei0519/backend-app/internal/accountclient"
 	"github.com/syuhei0519/backend-app/internal/order"
 	"github.com/syuhei0519/backend-app/internal/orderpayment"
 	"github.com/syuhei0519/backend-app/internal/payment"
@@ -68,7 +69,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			problem(w, status, code)
 			return
 		}
-		item, err := s.service.Create(r.Context(), input)
+		ctx := accountclient.Extract(r.Context(), r.Header)
+		w.Header().Set("X-Request-ID", accountclient.RequestID(ctx))
+		item, err := s.service.Create(ctx, input)
 		if err != nil {
 			failure(w, err)
 			return
@@ -256,6 +259,16 @@ func decode(w http.ResponseWriter, r *http.Request) (order.Input, int, string) {
 }
 func failure(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, order.ErrAccountUnconfigured):
+		problem(w, 503, "account_unconfigured")
+	case errors.Is(err, order.ErrAccountNotFound):
+		problem(w, 422, "account_not_found")
+	case errors.Is(err, order.ErrAccountUnavailable):
+		problem(w, 503, "account_unavailable")
+	case errors.Is(err, order.ErrAccountTimeout):
+		problem(w, 504, "account_timeout")
+	case errors.Is(err, order.ErrAccountBadResponse):
+		problem(w, 502, "account_bad_response")
 	case errors.Is(err, order.ErrInvalid):
 		problem(w, 400, "validation_error")
 	case errors.Is(err, order.ErrNotFound):

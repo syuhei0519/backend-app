@@ -1,5 +1,5 @@
-// Package order defines immutable orders. AccountID is a historical reference,
-// not proof of account existence, identity, or authorization.
+// Package order defines immutable orders. Creation checks Account existence;
+// stored AccountID is historical and does not prove ownership or authorization.
 package order
 
 import (
@@ -10,10 +10,15 @@ import (
 )
 
 var (
-	ErrInvalid     = errors.New("invalid order")
-	ErrNotFound    = errors.New("order not found")
-	ErrUnavailable = errors.New("order store unavailable")
-	ErrInternal    = errors.New("order store failed")
+	ErrAccountUnconfigured = errors.New("account unconfigured")
+	ErrAccountNotFound     = errors.New("account not found")
+	ErrAccountUnavailable  = errors.New("account unavailable")
+	ErrAccountTimeout      = errors.New("account timeout")
+	ErrAccountBadResponse  = errors.New("invalid account response")
+	ErrInvalid             = errors.New("invalid order")
+	ErrNotFound            = errors.New("order not found")
+	ErrUnavailable         = errors.New("order store unavailable")
+	ErrInternal            = errors.New("order store failed")
 )
 
 type Order struct {
@@ -32,9 +37,17 @@ type Store interface {
 	Create(context.Context, Input) (Order, error)
 	Get(context.Context, int64) (Order, error)
 }
-type Service struct{ store Store }
+type AccountChecker interface {
+	Check(context.Context, int64) error
+}
+type Service struct {
+	store    Store
+	accounts AccountChecker
+}
 
-func New(store Store) *Service { return &Service{store: store} }
+func New(store Store, accounts AccountChecker) *Service {
+	return &Service{store: store, accounts: accounts}
+}
 
 var itemPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
@@ -46,6 +59,14 @@ func Validate(input Input) error {
 }
 func (s *Service) Create(ctx context.Context, input Input) (Order, error) {
 	if err := Validate(input); err != nil {
+		return Order{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if s.accounts == nil {
+		return Order{}, ErrAccountUnconfigured
+	}
+	if err := s.accounts.Check(ctx, input.AccountID); err != nil {
 		return Order{}, err
 	}
 	return s.store.Create(ctx, input)

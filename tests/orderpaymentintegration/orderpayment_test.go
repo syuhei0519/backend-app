@@ -46,23 +46,23 @@ func build(t *testing.T, service string) string {
 	}
 	return p
 }
-func env(d *Database, address, paymentURL string) []string {
-	return []string{"PATH=" + os.Getenv("PATH"), "HOME=/tmp", "DATABASE_URL=" + d.URL(), "ORDER_HTTP_ADDRESS=" + address, "PAYMENT_HTTP_ADDRESS=" + address, "ORDER_PAYMENT_URL=" + paymentURL, "LOG_LEVEL=error"}
+func env(d *Database, address, paymentURL, accountURL string) []string {
+	return []string{"PATH=" + os.Getenv("PATH"), "HOME=/tmp", "DATABASE_URL=" + d.URL(), "ORDER_HTTP_ADDRESS=" + address, "PAYMENT_HTTP_ADDRESS=" + address, "ORDER_PAYMENT_URL=" + paymentURL, "ORDER_ACCOUNT_URL=" + accountURL, "LOG_LEVEL=error"}
 }
 func migrate(t *testing.T, binary string, d *Database) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, "migrate")
-	cmd.Env = env(d, "127.0.0.1:0", "")
+	cmd.Env = env(d, "127.0.0.1:0", "", "")
 	if cmd.Run() != nil {
 		t.Fatal("fixture migration failed")
 	}
 }
-func start(t *testing.T, binary string, d *Database, address, paymentURL string) func() {
+func start(t *testing.T, binary string, d *Database, address, paymentURL, accountURL string) func() {
 	t.Helper()
 	cmd := exec.Command(binary)
-	cmd.Env = env(d, address, paymentURL)
+	cmd.Env = env(d, address, paymentURL, accountURL)
 	if cmd.Start() != nil {
 		t.Fatal("start fixture API")
 	}
@@ -129,6 +129,13 @@ func count(t *testing.T, d *Database, id string) int {
 }
 func TestOrderPaymentLifecycle(t *testing.T) {
 	Enabled(t)
+	// #7 requires Account existence at creation. This Payment fixture stubs only
+	// that precondition; real Account/DB coverage lives in orderintegration.
+	accountHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":1}`)
+	}))
+	defer accountHTTP.Close()
 	odb := Start(t, "orders", "order_app")
 	pdb := Start(t, "payments", "payment_app")
 	ob, pb := build(t, "order"), build(t, "payment")
@@ -136,7 +143,7 @@ func TestOrderPaymentLifecycle(t *testing.T) {
 	migrate(t, pb, pdb)
 	migrate(t, ob, odb)
 	pa, oa := port(t), port(t)
-	start(t, pb, pdb, pa, "")
+	start(t, pb, pdb, pa, "", "")
 	// Fixture-only relay counts wire POSTs and can drop a committed response. Production has no proxy.
 	var calls atomic.Int32
 	var drop atomic.Bool
@@ -168,7 +175,7 @@ func TestOrderPaymentLifecycle(t *testing.T) {
 		_, _ = w.Write(body)
 	}))
 	defer relay.Close()
-	stop := start(t, ob, odb, oa, relay.URL)
+	stop := start(t, ob, odb, oa, relay.URL, accountHTTP.URL)
 	base := "http://" + oa
 	// Existing create/get behavior with the real Order process.
 	raw := `{"account_id":1,"item_code":"SKU-PAY","quantity":1}`
@@ -264,7 +271,7 @@ func TestOrderPaymentLifecycle(t *testing.T) {
 		t.Fatal("parallel duplicate or retry")
 	}
 	stop()
-	stop = start(t, ob, odb, oa, relay.URL)
+	stop = start(t, ob, odb, oa, relay.URL, accountHTTP.URL)
 	afterRestart := must(t, base, path, in, 200)
 	if afterRestart.ID != first.ID || !afterRestart.CreatedAt.Equal(first.CreatedAt) || count(t, pdb, in["request_id"].(string)) != 1 {
 		t.Fatal("restart replay")
@@ -289,7 +296,7 @@ func TestOrderPaymentLifecycle(t *testing.T) {
 		}
 	}
 	stop()
-	start(t, ob, odb, oa, "")
+	start(t, ob, odb, oa, "", accountHTTP.URL)
 	must(t, base, path, in, 503)
 	t.Log("real APIs=2 disposable DBs=2 success/decline/serial+parallel+restart replay/conflict/zero-call boundaries passed; repeated migration and unset-URL readiness passed")
 }

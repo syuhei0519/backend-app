@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/syuhei0519/backend-app/internal/accountclient"
 	"github.com/syuhei0519/backend-app/internal/order"
 	"github.com/syuhei0519/backend-app/internal/orderconfig"
 	"github.com/syuhei0519/backend-app/internal/orderhttp"
@@ -66,7 +67,17 @@ func run(args []string) int {
 		defer client.Close()
 		creator = client
 	}
-	handler := orderhttp.NewWithPayments(order.New(store), store, creator)
+	var checker order.AccountChecker
+	if cfg.AccountURL != "" {
+		client, err := accountclient.New(cfg.AccountURL)
+		if err != nil {
+			logger.Error("invalid Order configuration")
+			return 1
+		}
+		defer client.Close()
+		checker = client
+	}
+	handler := orderhttp.NewWithPayments(order.New(store, checker), store, creator)
 	server := &http.Server{Addr: cfg.Address, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	stopped := make(chan error, 1)
 	go func() { stopped <- server.ListenAndServe() }()

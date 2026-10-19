@@ -11,6 +11,9 @@ Go・HTTP/DB処理・SQL migration・イメージ・CIは本repository、migrati
 Order runs independently through `cmd/order-server` with its own database, role,
 embedded migrations and history. See [API and migration usage](docs/order-api.md)
 and [OpenAPI](docs/order-openapi.yaml), including disposable DB test commands.
-`account_id` is a historical reference, not an existence or authorization check:
-nonexistent Account IDs are accepted and Account deletion retains Orders.
+New Order creation checks Account existence through `ORDER_ACCOUNT_URL` with a
+bounded HTTP call. Unknown Accounts are rejected; an unset URL returns 503 for
+creation. This intentionally changes B1's acceptance of nonexistent references.
+Stored references remain historical: Account deletion retains Orders, and no
+ownership/authorization guarantee is provided. See [the #7 communication contract](docs/order-account-communication.md).
 Independent Order image/release and Kubernetes deployment are subsequent work.

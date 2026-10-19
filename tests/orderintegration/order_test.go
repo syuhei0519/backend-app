@@ -43,7 +43,7 @@ func TestDisposableHTTPPersistenceAndAccount(t *testing.T) {
 		t.Fatal("Account migration/ready")
 	}
 	accountHTTP := httptest.NewServer(httpapi.New(account.New(acct), acct, slog.New(slog.NewTextHandler(io.Discard, nil))))
-	defer accountHTTP.Close()
+	defer func() { accountHTTP.Close() }()
 	accountPool, err := pgxpool.New(ctx, accounts.URL())
 	if err != nil {
 		t.Fatal("fixture pool")
@@ -110,7 +110,7 @@ func TestDisposableHTTPPersistenceAndAccount(t *testing.T) {
 		t.Fatal("build Order process failed")
 	}
 	processEnv := func(address string) []string {
-		return []string{"PATH=" + os.Getenv("PATH"), "DATABASE_URL=" + orders.URL(), "ORDER_HTTP_ADDRESS=" + address, "LOG_LEVEL=error"}
+		return []string{"PATH=" + os.Getenv("PATH"), "DATABASE_URL=" + orders.URL(), "ORDER_HTTP_ADDRESS=" + address, "ORDER_ACCOUNT_URL=" + accountHTTP.URL, "LOG_LEVEL=error"}
 	}
 	migrate := func() {
 		t.Helper()
@@ -215,7 +215,10 @@ func TestDisposableHTTPPersistenceAndAccount(t *testing.T) {
 	call("DELETE", accountPath, "", "", 204)
 	call("GET", accountPath, "", "", 404)
 	same(p.base)
-	call("POST", p.base+"/api/orders", `{"account_id":9223372036854775807,"item_code":"A","quantity":999}`, "application/json", 201)
+	// B1 accepted nonexistent references. #7 intentionally rejects new Orders
+	// while preserving the original Order after Account deletion.
+	call("POST", p.base+"/api/orders", payload, "application/json", 422)
+	call("POST", p.base+"/api/orders", `{"account_id":9223372036854775807,"item_code":"A","quantity":999}`, "application/json", 422)
 	call("GET", p.base+"/api/orders/9223372036854775807", "", "", 404)
 	boundary := fmt.Sprintf(`{"account_id":1,"item_code":%q,"quantity":1}`, strings.Repeat("a", 64))
 	call("POST", p.base+"/api/orders", boundary+strings.Repeat(" ", 16384-len(boundary)), "application/json", 201)
@@ -226,7 +229,43 @@ func TestDisposableHTTPPersistenceAndAccount(t *testing.T) {
 		}
 		return n
 	}
+
+	// Stop only this invocation's actual Account HTTP handler; keep its DB and
+	// restart on the same origin, proving recovery without Order config changes.
 	n := count()
+	accountOrigin := accountHTTP.URL
+	accountAddress := accountHTTP.Listener.Addr().String()
+	accountHTTP.Close()
+	began := time.Now()
+	call("POST", p.base+"/api/orders", boundary, "application/json", 503)
+	if time.Since(began) > 3*time.Second || count() != n {
+		t.Fatal("Account HTTP outage not bounded/no-write")
+	}
+	call("GET", p.base+"/readyz", "", "", 200)
+	same(p.base)
+	listener, err := net.Listen("tcp", accountAddress)
+	if err != nil {
+		t.Fatal("restart disposable Account HTTP")
+	}
+	accountHTTP = httptest.NewUnstartedServer(httpapi.New(account.New(acct), acct, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	accountHTTP.Listener = listener
+	accountHTTP.Start()
+	if accountHTTP.URL != accountOrigin {
+		t.Fatal("Account origin changed")
+	}
+	call("POST", p.base+"/api/orders", boundary, "application/json", 201)
+	n = count()
+	accounts.Stop()
+	began = time.Now()
+	call("POST", p.base+"/api/orders", boundary, "application/json", 503)
+	if time.Since(began) > 4*time.Second || count() != n {
+		t.Fatal("Account DB outage not bounded/no-write")
+	}
+	accounts.Restart()
+	call("POST", p.base+"/api/orders", boundary, "application/json", 201)
+	n = count()
+	t.Log("Account HTTP stop/recovery and separate Account DB stop/recovery: bounded 503, no failed writes, recovered 201; Order get/readiness retained")
+
 	invalid := []string{"", "null", "[]", "true", "1", `"s"`, `{}`, payload + ` {}`, payload + ` x`, payload[:len(payload)-1], `{"account_id":1,"account_id":2,"item_code":"A","quantity":1}`, `{"account_id":1,"\u0061ccount_id":2,"item_code":"A","quantity":1}`}
 	for _, key := range []string{"account_id", "item_code", "quantity"} {
 		values := []string{"null", "{}", "[]", "true"}
@@ -303,6 +342,6 @@ func TestDisposableHTTPPersistenceAndAccount(t *testing.T) {
 	call("GET", p.base+path, "", "", 503)
 	call("GET", p.base+"/livez", "", "", 200)
 	stop(p)
-	t.Log("API create/get, nonexistent account, deleted account retention, two process restarts with changed PIDs, DB restart with same fresh volume, migration no-op, shutdown readiness and offline 503 passed")
+	t.Log("API create/get, nonexistent/deleted Account rejected for new Orders (intentional #7 contract change), existing deleted account retention, two process restarts with changed PIDs, DB restart with same fresh volume, migration no-op, shutdown readiness and offline 503 passed")
 	t.Log("Account CRUD before/after, duplicate 409, missing 404, validation 400, readiness, sentinel all columns and version/applied_at history unchanged passed")
 }

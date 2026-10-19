@@ -49,7 +49,7 @@ func TestPaymentInputBoundary(t *testing.T) {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			f := &fakeStore{}
 			p := &fakePayment{}
-			w := request(NewWithPayments(order.New(f), f, p), "POST", "/api/orders/7/payments", body, "application/json")
+			w := request(NewWithPayments(order.New(f, f), f, p), "POST", "/api/orders/7/payments", body, "application/json")
 			if w.Code != 400 || f.calls != 0 || p.calls != 0 {
 				t.Fatalf("status=%d order=%d payment=%d", w.Code, f.calls, p.calls)
 			}
@@ -78,7 +78,7 @@ func TestPaymentRoutesAndErrors(t *testing.T) {
 	} {
 		f := &fakeStore{}
 		p := &fakePayment{created: true}
-		w := request(NewWithPayments(order.New(f), f, p), tt.method, tt.path, tt.body, tt.media)
+		w := request(NewWithPayments(order.New(f, f), f, p), tt.method, tt.path, tt.body, tt.media)
 		if w.Code != tt.status || w.Header().Get("Allow") != tt.allow {
 			t.Fatalf("%s %s status=%d", tt.method, tt.path, w.Code)
 		}
@@ -98,7 +98,7 @@ func TestPaymentRoutesAndErrors(t *testing.T) {
 	} {
 		f := &fakeStore{}
 		p := &fakePayment{err: tt.err}
-		w := request(NewWithPayments(order.New(f), f, p), "POST", "/api/orders/1/payments", validPayment, "application/json")
+		w := request(NewWithPayments(order.New(f, f), f, p), "POST", "/api/orders/1/payments", validPayment, "application/json")
 		if w.Code != tt.status || !strings.Contains(w.Body.String(), `"`+tt.code+`"`) || strings.Contains(w.Body.String(), "private") {
 			t.Fatal("unsafe error")
 		}
@@ -106,13 +106,13 @@ func TestPaymentRoutesAndErrors(t *testing.T) {
 	for _, err := range []error{order.ErrNotFound, order.ErrUnavailable, order.ErrInternal} {
 		f := &fakeStore{err: err}
 		p := &fakePayment{}
-		_ = request(NewWithPayments(order.New(f), f, p), "POST", "/api/orders/1/payments", validPayment, "application/json")
+		_ = request(NewWithPayments(order.New(f, f), f, p), "POST", "/api/orders/1/payments", validPayment, "application/json")
 		if p.calls != 0 {
 			t.Fatal("failed Order called Payment")
 		}
 	}
 	f := &fakeStore{}
-	s := New(order.New(f), f)
+	s := New(order.New(f, f), f)
 	if w := request(s, "POST", "/api/orders/1/payments", validPayment, "application/json"); w.Code != 503 || !strings.Contains(w.Body.String(), "payment_unconfigured") {
 		t.Fatal("unconfigured")
 	}
@@ -120,7 +120,7 @@ func TestPaymentRoutesAndErrors(t *testing.T) {
 		t.Fatal("legacy API affected")
 	}
 	p := &fakePayment{}
-	if request(NewWithPayments(order.New(f), f, p), "POST", "/api/orders/1/payments", validPayment, "application/json").Code != 200 {
+	if request(NewWithPayments(order.New(f, f), f, p), "POST", "/api/orders/1/payments", validPayment, "application/json").Code != 200 {
 		t.Fatal("replay status")
 	}
 }
