@@ -68,6 +68,20 @@ jobs:
           go test -race ./...
           go build -trimpath -o .build/server ./cmd/server
           go build -trimpath -o .build/order-server ./cmd/order-server
+      - name: Order to Account exported trace regression
+        env:
+          ORDER_DISPOSABLE_TEST: '1'
+          TRACE_EVIDENCE_DIR: ${{ runner.temp }}/order-account-traces
+        run: |
+          docker pull postgres@sha256:9b18b78397054fce88a9552e9d5a3ad5bb7fd258c5b3cc1c5028e46373d6ea8f
+          docker pull ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.161.0@sha256:b5cf983651c32c3ca13f936deb51742015a54d121f388cac248923ddeb8cc9fc
+          go test -count=1 -v ./tests/distributedtrace
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: order-account-traces-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/order-account-traces/
+          if-no-files-found: error
+          retention-days: 7
       - name: Source and rendered security checks
         env:
           SECURITY_RENDER_REQUIRED: 'false'

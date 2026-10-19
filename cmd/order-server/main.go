@@ -16,6 +16,7 @@ import (
 	"github.com/syuhei0519/backend-app/internal/orderconfig"
 	"github.com/syuhei0519/backend-app/internal/orderhttp"
 	"github.com/syuhei0519/backend-app/internal/orderpayment"
+	"github.com/syuhei0519/backend-app/internal/ordertrace"
 	"github.com/syuhei0519/backend-app/internal/paymentclient"
 	"github.com/syuhei0519/backend-app/internal/store/orderpostgres"
 )
@@ -57,6 +58,12 @@ func run(args []string) int {
 		logger.Error("Order database target unavailable or rejected")
 		return 1
 	}
+	observation, err := ordertrace.Init(ctx, buildCommit, logger)
+	if err != nil {
+		logger.Error("invalid Order telemetry configuration")
+		return 1
+	}
+	defer ordertrace.Shutdown(observation)
 	var creator orderpayment.Creator
 	if cfg.PaymentURL != "" {
 		client, err := paymentclient.New(cfg.PaymentURL)
@@ -69,7 +76,7 @@ func run(args []string) int {
 	}
 	var checker order.AccountChecker
 	if cfg.AccountURL != "" {
-		client, err := accountclient.New(cfg.AccountURL)
+		client, err := accountclient.NewWithTracer(cfg.AccountURL, observation.Tracer("order-backend"))
 		if err != nil {
 			logger.Error("invalid Order configuration")
 			return 1
@@ -78,6 +85,7 @@ func run(args []string) int {
 		checker = client
 	}
 	handler := orderhttp.NewWithPayments(order.New(store, checker), store, creator)
+	handler.SetTracer(observation.Tracer("order-backend"))
 	server := &http.Server{Addr: cfg.Address, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	stopped := make(chan error, 1)
 	go func() { stopped <- server.ListenAndServe() }()

@@ -21,6 +21,10 @@ import (
 	"github.com/syuhei0519/backend-app/internal/orderpayment"
 	"github.com/syuhei0519/backend-app/internal/payment"
 	"github.com/syuhei0519/backend-app/internal/paymentclient"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 const MaxBody = 16 << 10
@@ -31,15 +35,17 @@ type Server struct {
 	payments *orderpayment.Service
 	check    readiness
 	stopping atomic.Bool
+	tracer   trace.Tracer
 }
 
 func New(service *order.Service, check readiness) *Server {
 	return NewWithPayments(service, check, nil)
 }
 func NewWithPayments(service *order.Service, check readiness, creator orderpayment.Creator) *Server {
-	return &Server{service: service, check: check, payments: orderpayment.New(service, creator)}
+	return &Server{service: service, check: check, payments: orderpayment.New(service, creator), tracer: noop.NewTracerProvider().Tracer("order-backend")}
 }
-func (s *Server) BeginShutdown() { s.stopping.Store(true) }
+func (s *Server) SetTracer(tracer trace.Tracer) { s.tracer = tracer }
+func (s *Server) BeginShutdown()                { s.stopping.Store(true) }
 
 var pathID = regexp.MustCompile(`^[1-9][0-9]*$`)
 
@@ -64,13 +70,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !method(w, r, "POST") {
 			return
 		}
+		ctx := accountclient.Extract(r.Context(), r.Header)
+		ctx, span := s.tracer.Start(ctx, "POST /api/orders", trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attribute.String("http.request.method", "POST"), attribute.String("http.route", "/api/orders")))
+		out := &traceResponse{ResponseWriter: w, status: 200}
+		w = out
+		w.Header().Set("X-Request-ID", accountclient.RequestID(ctx))
+		defer func() {
+			span.SetAttributes(attribute.Int("http.response.status_code", out.status))
+			if out.status >= 500 {
+				span.SetStatus(codes.Error, "request failed")
+			}
+			span.End()
+		}()
 		input, status, code := decode(w, r)
 		if status != 0 {
 			problem(w, status, code)
 			return
 		}
-		ctx := accountclient.Extract(r.Context(), r.Header)
-		w.Header().Set("X-Request-ID", accountclient.RequestID(ctx))
 		item, err := s.service.Create(ctx, input)
 		if err != nil {
 			failure(w, err)
@@ -286,4 +302,14 @@ func write(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+type traceResponse struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *traceResponse) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
 }
