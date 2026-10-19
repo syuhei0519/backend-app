@@ -142,3 +142,44 @@ Manager は公開条件の未確認値と両サービスの副作用を確認し
 具体的に決める必要がある。新しい dispatch 公開経路の追加は scope 拡大として報告し、
 独断で実装しない。自己検証のみ実施。独立 Review、現在 PR CI の評価、マージは Manager 担当。
 公開・#20 digest 更新は依頼の明示停止点で pending、拒否された実行や不確かな公開結果はない。
+
+### 追記: 承認後の指定 rerun 1 回（2026-10-19）
+
+Manager より、ユーザーの Order/Account 両 package の公開承認と
+`ENABLE_GHCR_PUBLISH` 設定完了の申告を受領した。設定値の独立確認とは区別する。
+実行前の read-only 確認で backend-app main は引き続き
+`02b1018adaed8352a4651dd7fa8c73437e230296`、branch protected=true。
+run 39142519467 は同 SHA の main push / attempt 1 / completed success。
+直近100件の run に非完了 run はなく、重複実行なしを確認した。
+
+指示された以下を **1回だけ** 実行し exit 0、新 attempt 2 の開始を API で確認した。
+
+```sh
+gh run rerun 39142519467 -R syuhei0519/backend-app
+```
+
+結果: https://github.com/syuhei0519/backend-app/actions/runs/39142519467/attempts/2
+は 2026-10-19T10:36:55Z に completed/success。
+classify、validate、image (backend)、image (order)、ci-result は success。
+**publish/propose は skipped のまま**。pending deployments は空で、
+人間承認待ちの publish job は発生しなかった。承認の代行はしていない。
+checked-image-order-2 / checked-image-2 / security-results-2 の metadata は存在し、
+published-evidence-order-2 / published-evidence-2 はない。release 一覧も以前の Account
+v1 2件のみで、今回の正式 Order release は生成されていない。
+
+workflow job の publish 条件は、push / main / ref_protected /
+`vars.ENABLE_GHCR_PUBLISH == 'true'` と必要 job 成功。
+必要 job の成功は確認したが、評価時の ref_protected/vars の値は job metadata にない。
+branch API の protected=true は当該式の評価値を直接証明するものではない。
+したがって、skip の直接原因を「変数が false」等と断定しない。
+変数読み取り403は既知のアクセス制限として保持し、別権限・別環境・認証で
+迂回していない。403 artifact/GHCR 経路も再試行していない。
+公開 helper は未実行のため、image/SBOM/scan/release の送信は発生していない。
+
+Manager への阻害報告: 対象は同 run / attempt 2 の publish job。
+公開実行はアクセス拒否や不確かな結果ではなく、既存 workflow 条件による skipped。
+再 rerun はしておらず、今後の再実行・設計変更は新しい具体指示待ち。
+Manager 側で既存変数の適用 scope・名前・値と run の評価条件を確認する必要がある。
+Secrets/Ruleset/権限/変数/workflow は変更していない。
+正式 digest がないため application-manifest #20 の disabled digest 更新も未着手。
+この追記は過去の未実施記録を保存し、その後の実行結果を結ぶもの。
