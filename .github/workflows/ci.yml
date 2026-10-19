@@ -130,7 +130,14 @@ jobs:
           retention-days: 7
   publish:
     needs: [validate, image, ci-result]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.ref_protected && vars.ENABLE_GHCR_PUBLISH == 'true'
+    # docs is intentionally skipped on full CI; do not inherit its implicit success().
+    if: >-
+      !cancelled() &&
+      needs.validate.result == 'success' &&
+      needs.image.result == 'success' &&
+      needs.ci-result.result == 'success' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      github.ref_protected && vars.ENABLE_GHCR_PUBLISH == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -183,7 +190,10 @@ jobs:
           retention-days: 90
   propose:
     needs: publish
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.ref_protected && vars.ENABLE_MANIFEST_PR == 'true'
+    if: >-
+      !cancelled() && needs.publish.result == 'success' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      github.ref_protected && vars.ENABLE_MANIFEST_PR == 'true'
     strategy:
       fail-fast: false
       matrix:
