@@ -4,17 +4,19 @@ No server deployment, port-forward, token creation, PR checkout or local runner
 registration is performed here. Supply an approved local server and project token.
 """
 import json
+import importlib.util
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
-import tarfile
 import tempfile
 import urllib.parse
 import uuid
 
 IMAGE = 'sonarsource/sonar-scanner-cli:12.3.0.4285_8.1.0@sha256:47956b669bf486bdad919e1cbd0533223515aa0b6d1d31763e5a3754942df6d7'
+_spec = importlib.util.spec_from_file_location('tracked_source', Path(__file__).with_name('tracked-source.py'))
+_source = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_source)
 
 
 def require(value):
@@ -52,13 +54,9 @@ def run_container(command, timeout):
 
 def execute(commit, temporary):
     source = Path(temporary) / 'source'; source.mkdir()
-    archive = Path(temporary) / 'source.tar'
-    subprocess.run(['git', 'archive', '--format=tar', '-o', str(archive), commit], check=True, capture_output=True)
-    with tarfile.open(archive) as tar:
-        for item in tar:
-            path = Path(item.name)
-            require(not path.is_absolute() and '..' not in path.parts and not item.issym() and not item.islnk())
-        tar.extractall(source, filter='data')
+    require(git('rev-parse', 'HEAD') == commit)
+    for name, data in _source.tracked_files(Path.cwd(), revision=commit).items():
+        path = source / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(data)
     uid, gid = (os.getuid(), os.getgid()) if hasattr(os, 'getuid') else (1000, 1000)
     result = run_container(['docker', 'run', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
         '--user', f'{uid}:{gid}', '-e', 'SONAR_HOST_URL', '-e', 'SONAR_TOKEN', '-e', 'SONAR_USER_HOME=/tmp/sonar',

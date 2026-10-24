@@ -47,6 +47,10 @@ Neither successful scanner execution nor a green observation job means no findin
   image/validation and protected-main/environment controls. No required-check,
   branch-protection or repository permission setting has been changed.
 
+Source blobs are read from the fixed commit using `git ls-tree` and
+`git cat-file --batch`; archive `export-ignore` and `export-subst` cannot hide or
+rewrite tracked source. Symlinks/submodules and oversized source snapshots fail.
+
 The two repositories carry identical small Python wrappers/tests. Existing
 backend shared-tools Go modules and frontend's
 `ba8b3d211ac3e497900abd6c6f44f45388e3801c` references are untouched. There is no

@@ -5,14 +5,13 @@ a reviewed Python distribution contract. Existing pinned Go modules are unchange
 """
 import datetime as dt
 import hashlib
-import io
+import importlib.util
 import json
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import re
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
 import urllib.request
@@ -21,6 +20,8 @@ import uuid
 IMAGE = 'semgrep/semgrep:1.182.0@sha256:4a34048c04fef049f71665047f074cffb00cc3d89482f965a5cd151d589237af'
 VERSION = '1.182.0'
 UTC = dt.timezone.utc
+_spec = importlib.util.spec_from_file_location('tracked_source', Path(__file__).with_name('tracked-source.py'))
+_source = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_source)
 
 
 def require(condition):
@@ -147,20 +148,11 @@ def rule_lock(root):
     return lock
 
 
-def snapshot(root):
+def snapshot(root, commit='HEAD'):
     language = decode((root / 'security/semgrep.lock.json').read_bytes())['language']
+    require(language in ('go', 'javascript-typescript'))
     suffixes = {'.go'} if language == 'go' else {'.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'}
-    data = subprocess.run(['git', 'archive', '--format=tar', 'HEAD'], cwd=root, check=True, capture_output=True).stdout
-    targets = {}
-    with tarfile.open(fileobj=io.BytesIO(data)) as archive:
-        for member in archive:
-            path = safe_path(member.name)
-            if PurePosixPath(path).suffix not in suffixes:
-                continue
-            require(member.isfile() and member.size <= 10 * 1024 * 1024)
-            targets[path] = archive.extractfile(member).read()
-    require(bool(targets))
-    return targets
+    return _source.tracked_files(root, suffixes, revision=commit)
 
 
 def run_container(command, timeout):
@@ -208,13 +200,15 @@ def main():
     try:
         require(len(sys.argv) == 1)
         lock = rule_lock(root)
-        targets = snapshot(root)
+        commit = subprocess.run(['git', 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()
+        require(re.fullmatch('[0-9a-f]{40}', commit))
+        targets = snapshot(root, commit)
         policy = decode((root / 'security/sast-policy.json').read_bytes())
         repo = os.environ['GITHUB_REPOSITORY']
         raw, code, elapsed = scan(root, targets)
         result = evaluate(raw, code, targets, lock['rules'], policy, repo, dt.datetime.now(UTC))
         result.update({'image': IMAGE, 'rulesSha256': sha(canonical(lock)), 'durationSeconds': elapsed,
-                       'sourceCommit': subprocess.run(['git', 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip(),
+                       'sourceCommit': commit,
                        'repository': repo, 'runId': os.environ.get('GITHUB_RUN_ID'),
                        'runAttempt': os.environ.get('GITHUB_RUN_ATTEMPT')})
     except Exception:

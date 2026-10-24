@@ -99,6 +99,25 @@ class Gate(unittest.TestCase):
 
 
 class ContainerBoundary(unittest.TestCase):
+    def test_archive_attributes_cannot_hide_tracked_sources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for command in (['git', 'init', '-q', str(root)],):
+                subprocess.run(command, check=True, capture_output=True)
+            (root / 'security').mkdir()
+            (root / 'security/semgrep.lock.json').write_text('{"language":"go"}')
+            (root / '.gitattributes').write_text('hidden.go export-ignore\nvisible.go export-subst\n')
+            (root / 'hidden.go').write_bytes(b'package hidden\n')
+            (root / 'visible.go').write_bytes(b'package visible\n// $Format:%H$\n')
+            subprocess.run(['git', 'add', '.'], cwd=root, check=True, capture_output=True)
+            subprocess.run(['git', '-c', 'user.name=SAST fixture', '-c', 'user.email=sast@example.invalid',
+                            'commit', '-qm', 'tracked source fixture'], cwd=root, check=True, capture_output=True)
+            (root / 'untracked.go').write_bytes(b'package untracked\n')
+            files = s.snapshot(root)
+            self.assertEqual(set(files), {'hidden.go', 'visible.go'})
+            self.assertEqual(files['visible.go'], b'package visible\n// $Format:%H$\n')
+            self.assertIn('hidden.go', s._source.tracked_files(root))
+
     def test_timeout_stops_only_owned_container(self):
         with patch.object(s.subprocess, 'run', side_effect=[subprocess.TimeoutExpired('docker', 1),
                 subprocess.CompletedProcess([], 0)]) as run:
