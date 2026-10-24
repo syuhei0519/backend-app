@@ -1,5 +1,15 @@
 # backend-app
 
+## Existing kind deployment (PLAT-195/198)
+
+For `kind-learning-20261018-69c763`, the ordinary deployment entry is a reviewed
+Git commit/PR followed by Argo CD sync. Follow the [current deployment contract](https://github.com/syuhei0519/platform-gitops/blob/main/learning/existing-kind/DEPLOYMENT.md).
+Manual workload apply, image mutation and rollout restart from historical learning
+instructions are retired. Existing Argo Core is reused; the old platform-lab and
+isolated Account trial instructions are not the current cluster's deployment route.
+This entry-point change does not claim that the pending PLAT-177/199 acceptance has passed.
+
+
 Go標準HTTPサーバーとpgxによるAccount API。`server migrate`でforward-only migrationを適用します。
 
 Go・HTTP/DB処理・SQL migration・イメージ・CIは本repository、migration実行Job・account固有DB/PVC・接続Secret参照はapplication-manifest、Argo Application/AppProject/Namespaceはplatform-gitopsが所有します。DBのSecret更新だけではDB roleの認証情報は変わりません。rotationの実行は利用者承認が必要です。
