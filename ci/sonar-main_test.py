@@ -48,6 +48,15 @@ class MainOnly(unittest.TestCase):
                 subprocess.CompletedProcess([], 1)]):
             with self.assertRaises(ValueError): s.run_container(['docker', 'run', 'scanner'], 1)
 
+    def test_explicit_truststore_mount_and_missing_file_refusal(self):
+        self.assertEqual(s.truststore_arguments({}), [])
+        with tempfile.TemporaryDirectory() as temporary:
+            file = Path(temporary) / 'truststore.p12'
+            with self.assertRaises(ValueError): s.truststore_arguments({'SONAR_TRUSTSTORE_PATH': str(file)})
+            file.write_bytes(b'public certificate truststore fixture')
+            self.assertEqual(s.truststore_arguments({'SONAR_TRUSTSTORE_PATH': str(file)}),
+                             ['-v', str(file.resolve()) + ':/tmp/sonar/ssl/truststore.p12:ro'])
+
 
 if __name__ == '__main__':
     unittest.main()

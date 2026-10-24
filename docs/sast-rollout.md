@@ -98,11 +98,15 @@ production blocking subset.
 `platform-backend-app` and `platform-frontend-app`. `ci/sonar-main.py` accepts only a
 clean main checkout whose HEAD matches the current remote main. It requires an
 approved HTTPS `SONAR_HOST_URL` and a project-scoped `SONAR_TOKEN` in the process
-environment, archives tracked files without Git credentials, and uses pinned
+environment, snapshots tracked blobs without Git credentials, and uses pinned
 SonarScanner CLI image `12.3.0.4285_8.1.0` (CLI 8.1.0.6389). It waits for the Quality
 Gate and returns failure for scanner/connectivity/quality failure. No PR/branch
 analysis or public-fork local runner is configured. The scanner can send source to
 the approved private server; running it is an explicit operator action.
+For the proposed private TLS endpoint, an operator may set `SONAR_TRUSTSTORE_PATH`
+to the approved public-certificate PKCS12 `.p12` file (no private key, default
+`changeit` store password). Only that file is mounted read-only at the scanner's
+per-run truststore location; global trust and TLS verification are unchanged.
 
 Pending shared-server proposal (platform-gitops owns this, not either app repo):
 

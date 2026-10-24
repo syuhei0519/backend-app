@@ -52,6 +52,17 @@ def run_container(command, timeout):
         require(cleanup.returncode == 0)
 
 
+def truststore_arguments(env):
+    value = env.get('SONAR_TRUSTSTORE_PATH')
+    if not value:
+        return []
+    path = Path(value)
+    require(path.suffix == '.p12' and path.is_file() and not path.is_symlink())
+    require(0 < path.stat().st_size <= 1024 * 1024)
+    # Mount just the approved public-certificate truststore, not its directory.
+    return ['-v', str(path.resolve()) + ':/tmp/sonar/ssl/truststore.p12:ro']
+
+
 def execute(commit, temporary):
     source = Path(temporary) / 'source'; source.mkdir()
     require(git('rev-parse', 'HEAD') == commit)
@@ -60,7 +71,8 @@ def execute(commit, temporary):
     uid, gid = (os.getuid(), os.getgid()) if hasattr(os, 'getuid') else (1000, 1000)
     result = run_container(['docker', 'run', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
         '--user', f'{uid}:{gid}', '-e', 'SONAR_HOST_URL', '-e', 'SONAR_TOKEN', '-e', 'SONAR_USER_HOME=/tmp/sonar',
-        '-v', str(source.resolve()) + ':/usr/src', IMAGE, '-Dsonar.qualitygate.wait=true',
+        '-v', str(source.resolve()) + ':/usr/src'] + truststore_arguments(os.environ) +
+        [IMAGE, '-Dsonar.qualitygate.wait=true',
         '-Dsonar.qualitygate.timeout=300', '-Dsonar.scm.revision=' + commit],
         timeout=900)
     # Never forward scanner logs which can include source/URL details.

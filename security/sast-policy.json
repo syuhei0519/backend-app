@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "mode": "enforce",
+  "mode": "observe",
   "blockingSeverities": [
     "ERROR",
     "WARNING"

@@ -91,3 +91,47 @@ Known Semgrep limitations also include typed React props passed via an intermedi
 HTML object and a locally shadowed `DOMPurify.sanitize` name. Direct typed raw-HTML
 and upstream taint cases are tested. These limits must remain visible in the
 comparison; do not claim interfile or comprehensive XSS analysis.
+
+## Deliberate PR comparison and stopped image path
+
+The fixtures were committed solely for static analysis, with no initializer, test,
+handler registration or application import. Neither source sample was executed.
+Both PRs used a temporary `mode=enforce`; this final change removes the source
+fixtures and restores the reviewed initial `mode=observe`.
+
+| Test | Semgrep CE result | CodeQL result |
+| --- | --- | --- |
+| Go request to `exec.Command("sh", "-c", input)` | `dangerous-exec-command`, ERROR | `go/command-injection`, Critical |
+| Go request to concatenated pgxpool SQL | `pgxpool-concatenated-query`, ERROR | no result for this fixture sink |
+| Go request to concatenated database/sql query | no result in the selected pgx-focused set | `go/sql-injection`, High |
+| Browser location to `innerHTML` | `insecure-innerhtml`, ERROR | `js/xss`, High |
+| Direct typed React props to raw HTML | `typed-react-html-audit`, WARNING | no result for this fixture sink |
+
+Backend negative head `dd0e0ef0b5a34a4cfb209055997f94b5658bdd8e` produced 13
+Semgrep findings (11 baseline + 2 fixture findings), 101 considered files, and
+`pass=false` / `wouldPass=false` in 3.19 seconds. Frontend negative head
+`c48151da6ef1ac8d024192e56dd2edb08f39114b` produced 2 fixture findings, 12 files,
+and the same failed enforcement decision in 3.13 seconds. CodeQL reported two new
+backend results and one frontend result; analysis jobs took 73 and 43 seconds
+respectively, including setup/extraction. These timings measure different work
+boundaries and are not a general scanner performance benchmark.
+
+- [backend negative CI 40052830207](https://github.com/syuhei0519/backend-app/actions/runs/40052830207)
+- [frontend negative CI 40052833079](https://github.com/syuhei0519/frontend-app/actions/runs/40052833079)
+- [backend negative CodeQL 40052827252](https://github.com/syuhei0519/backend-app/actions/runs/40052827252)
+- [frontend negative CodeQL 40052830187](https://github.com/syuhei0519/frontend-app/actions/runs/40052830187)
+
+Both negative CI runs completed with existing validation successful, `sast` and
+`ci-result` failed, and image / publish / propose skipped. Trivy remained active
+in the independent successful validation job. Existing active `main-ci-and-pr`
+rulesets require `ci-result`, strict up-to-date checks and PRs, with no bypass
+actors; settings were only read. No CodeQL result ruleset has been added, so
+CodeQL job success plus security findings remained observational.
+
+GitHub PR CI checked out synthetic merge commits while CodeQL analyzed PR head.
+The merge snapshots were backend `b58620668bfda1a1d6948d3aa16d61c42aab89da`
+and frontend `9a572a066452b8f115c29273a3afc338e465e7fd`. Git tree IDs were
+compared with each negative head to verify identical source content. The sanitized
+`sast-semgrep-1` artifacts retain the actual scanner snapshot identity and findings.
+Final corrected CI/CodeQL and the shared SonarQube server acceptance are separate
+checks; these negative runs do not establish Jira completion.
