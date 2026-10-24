@@ -3,11 +3,10 @@
 package sastverification
 
 import (
+	"database/sql"
 	"net/http"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func semgrepOnly(db *pgxpool.Pool, r *http.Request) {
-	db.QueryRow(r.Context(), "SELECT "+r.URL.Query().Get("q"))
+func codeqlOnly(db *sql.DB, r *http.Request) {
+	db.QueryContext(r.Context(), "SELECT "+r.URL.Query().Get("q"))
 }
