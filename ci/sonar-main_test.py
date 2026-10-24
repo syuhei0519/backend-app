@@ -1,4 +1,5 @@
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -49,13 +50,26 @@ class MainOnly(unittest.TestCase):
             with self.assertRaises(ValueError): s.run_container(['docker', 'run', 'scanner'], 1)
 
     def test_explicit_truststore_mount_and_missing_file_refusal(self):
-        self.assertEqual(s.truststore_arguments({}), [])
+        self.assertEqual(s.truststore_arguments({}), ([], []))
         with tempfile.TemporaryDirectory() as temporary:
             file = Path(temporary) / 'truststore.p12'
             with self.assertRaises(ValueError): s.truststore_arguments({'SONAR_TRUSTSTORE_PATH': str(file)})
             file.write_bytes(b'public certificate truststore fixture')
             self.assertEqual(s.truststore_arguments({'SONAR_TRUSTSTORE_PATH': str(file)}),
-                             ['-v', str(file.resolve()) + ':/tmp/sonar/ssl/truststore.p12:ro'])
+                             (['-v', str(file.resolve()) + ':/tmp/sonar-truststore.p12:ro'],
+                              ['-Dsonar.scanner.truststorePath=/tmp/sonar-truststore.p12']))
+
+    @unittest.skipUnless(os.environ.get('SAST_REAL_TESTS') == '1', 'set SAST_REAL_TESTS=1 for scanner image permissions')
+    def test_real_truststore_does_not_block_nonroot_cache(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            file = Path(temporary) / 'truststore.p12'
+            file.write_bytes(b'public-certificate fixture; no private key or token')
+            file.chmod(0o644)
+            mounts, _ = s.truststore_arguments({'SONAR_TRUSTSTORE_PATH': str(file)})
+            result = s.run_container(['docker', 'run', '--network', 'none', '--entrypoint', 'sh',
+                '--user', '1000:1000', '-e', 'SONAR_USER_HOME=/tmp/sonar'] + mounts +
+                [s.IMAGE, '-ec', 'mkdir -p "$SONAR_USER_HOME/cache"; test -r /tmp/sonar-truststore.p12; test -w "$SONAR_USER_HOME/cache"'], timeout=60)
+            self.assertEqual(result.returncode, 0)
 
 
 if __name__ == '__main__':
