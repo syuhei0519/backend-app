@@ -310,6 +310,11 @@ func validateSource(archive, checksum, destination, commit, expectedSource strin
 		return proof, fail()
 	}
 	defer os.RemoveAll(dir)
+	// OCI has only this literal nested directory. Create it independently of tar
+	// names; all archive names still pass the same strict allowlist below.
+	if os.MkdirAll(filepath.Join(dir, "blobs", "sha256"), 0700) != nil {
+		return proof, fail()
+	}
 	tr := tar.NewReader(f)
 	seen := map[string]bool{}
 	var total int64
@@ -334,9 +339,6 @@ func validateSource(archive, checksum, destination, commit, expectedSource strin
 			if n != "blobs" && n != "blobs/sha256" {
 				return proof, fail()
 			}
-			if os.MkdirAll(filepath.Join(dir, filepath.FromSlash(n)), 0700) != nil {
-				return proof, fail()
-			}
 			continue
 		}
 		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
@@ -350,9 +352,6 @@ func validateSource(archive, checksum, destination, commit, expectedSource strin
 		}
 		total += hdr.Size
 		p := filepath.Join(dir, filepath.FromSlash(n))
-		if os.MkdirAll(filepath.Dir(p), 0700) != nil {
-			return proof, fail()
-		}
 		out, e := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if e != nil {
 			return proof, fail()

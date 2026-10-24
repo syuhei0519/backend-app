@@ -77,13 +77,30 @@ def approval_comment(repo, comment):
         return decode(response.read(1024 * 1024))
 
 
-def policy_check(policy, repo, now, fetch=approval_comment):
-    require(set(policy) == {'schemaVersion', 'mode', 'blockingSeverities', 'exceptions'})
-    require(type(policy['schemaVersion']) is int and policy['schemaVersion'] == 1)
+def policy_check(policy, repo, now, rules, fetch=approval_comment):
+    require(set(policy) == {'schemaVersion', 'mode', 'blockingSeverities', 'ruleModes', 'exceptions'})
+    require(type(policy['schemaVersion']) is int and policy['schemaVersion'] == 2)
     require(policy['mode'] in ('observe', 'enforce'))
     require(policy['blockingSeverities'] == ['ERROR', 'WARNING'])
     require(isinstance(policy['exceptions'], list))
     require(re.fullmatch(r'syuhei0519/(backend-app|frontend-app)', repo))
+    require(isinstance(policy['ruleModes'], dict) and set(policy['ruleModes']) == set(rules))
+    modes = {}
+    for rule, selection in policy['ruleModes'].items():
+        require(isinstance(selection, dict) and selection.get('mode') in ('enforce', 'observe'))
+        modes[rule] = selection['mode']
+        if selection['mode'] == 'enforce':
+            require(set(selection) == {'mode'})
+        else:
+            # One broad LOW-confidence audit rule remains visible for a bounded
+            # review period. This cannot turn SQL/shell/XSS rules into audit-only.
+            require(repo == 'syuhei0519/backend-app' and rule == 'dangerous-exec-command')
+            require(set(selection) == {'mode', 'owner', 'reason', 'createdAt', 'expiresAt'})
+            require(selection['owner'] == 'syuhei0519')
+            require(isinstance(selection['reason'], str) and 20 <= len(selection['reason'].strip()) <= 500)
+            created, expires = timestamp(selection['createdAt']), timestamp(selection['expiresAt'])
+            require(created <= now < expires and expires - created <= dt.timedelta(days=14))
+    require(any(mode == 'enforce' for mode in modes.values()))
     ids, fingerprints = set(), set()
     for item in policy['exceptions']:
         require(set(item) == {'id', 'fingerprint', 'owner', 'reason', 'createdAt', 'expiresAt', 'approval'})
@@ -102,7 +119,7 @@ def policy_check(policy, repo, now, fetch=approval_comment):
         require(evidence['user']['login'] == 'syuhei0519')
         require(evidence['html_url'] == item['approval'])
         require(evidence['body'].strip() == 'SAST-EXCEPTION-APPROVED sha256:' + digest)
-    return {x['fingerprint']: x['id'] for x in policy['exceptions']}
+    return {x['fingerprint']: x['id'] for x in policy['exceptions']}, modes
 
 
 def evaluate(raw, exit_code, targets, rules, policy, repo, now, fetch=approval_comment):
@@ -113,7 +130,7 @@ def evaluate(raw, exit_code, targets, rules, policy, repo, now, fetch=approval_c
     require(isinstance(raw['results'], list) and isinstance(raw['paths']['scanned'], list))
     scanned = [safe_path(p.removeprefix('./')) for p in raw['paths']['scanned']]
     require(set(scanned) == set(targets) and len(scanned) == len(set(scanned)) and bool(scanned))
-    exceptions = policy_check(policy, repo, now, fetch)
+    exceptions, modes = policy_check(policy, repo, now, rules, fetch)
     findings = []
     for item in raw['results']:
         rule, path = item['check_id'], safe_path(item['path'].removeprefix('./'))
@@ -127,7 +144,8 @@ def evaluate(raw, exit_code, targets, rules, policy, repo, now, fetch=approval_c
                    'severity': severity, 'sourceSha256': sha(targets[path])}
         finding['fingerprint'] = sha(canonical(finding))
         finding['exceptionId'] = exceptions.get(finding['fingerprint'])
-        finding['blocking'] = severity in policy['blockingSeverities'] and finding['exceptionId'] is None
+        finding['ruleMode'] = modes[rule]
+        finding['blocking'] = modes[rule] == 'enforce' and severity in policy['blockingSeverities'] and finding['exceptionId'] is None
         findings.append(finding)
     would_pass = not any(f['blocking'] for f in findings)
     return {'schema': 'core-platform/sast/v1', 'scanner': 'semgrep-ce', 'version': VERSION,

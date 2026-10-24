@@ -23,7 +23,8 @@ class Gate(unittest.TestCase):
         self.repo = 'syuhei0519/backend-app'
         self.targets = {'app.go': b'package app\nfunc example() {}\n'}
         self.rules = {'test-rule': 'ERROR'}
-        self.policy = {'schemaVersion': 1, 'mode': 'enforce', 'blockingSeverities': ['ERROR', 'WARNING'], 'exceptions': []}
+        self.policy = {'schemaVersion': 2, 'mode': 'enforce', 'blockingSeverities': ['ERROR', 'WARNING'],
+                       'ruleModes': {'test-rule': {'mode': 'enforce'}}, 'exceptions': []}
         self.raw = {'version': s.VERSION, 'errors': [], 'paths': {'scanned': ['app.go']}, 'results': []}
 
     def finding(self):
@@ -97,6 +98,31 @@ class Gate(unittest.TestCase):
         self.raw['results'][0]['extra']['severity'] = 'UNKNOWN'
         with self.assertRaises(ValueError): self.evaluate()
 
+    def test_rule_selection_is_complete_and_cannot_observe_injection_rules(self):
+        for modes in ({}, {'unknown': {'mode': 'enforce'}}, {'test-rule': {'mode': 'observe'}},
+                      {'test-rule': {'mode': 'enforce', 'ignored': True}}):
+            self.policy['ruleModes'] = modes
+            with self.assertRaises(ValueError): self.evaluate()
+
+    def test_bounded_audit_review_remains_visible_and_expiry_fails(self):
+        self.finding()
+        self.rules['dangerous-exec-command'] = 'ERROR'
+        self.raw['results'][0]['check_id'] = 'dangerous-exec-command'
+        self.policy['ruleModes']['dangerous-exec-command'] = dict(mode='observe', owner='syuhei0519',
+            reason='Independently reviewed test harness false positives; retain all findings.',
+            createdAt='2030-01-01T00:00:00Z', expiresAt='2030-01-03T00:00:00Z')
+        result = self.evaluate()
+        self.assertTrue(result['pass'])
+        self.assertEqual(len(result['findings']), 1)
+        self.assertFalse(result['findings'][0]['blocking'])
+        self.assertEqual(result['findings'][0]['ruleMode'], 'observe')
+        self.raw['results'].append({**self.raw['results'][0], 'check_id': 'test-rule'})
+        self.assertFalse(self.evaluate()['pass'], 'selected injection finding was hidden by audit')
+        self.policy['ruleModes']['dangerous-exec-command']['expiresAt'] = '2030-01-02T00:00:00Z'
+        for mode in ('enforce', 'observe'):
+            self.policy['mode'] = mode
+            with self.assertRaises(ValueError): self.evaluate()
+
 
 class ContainerBoundary(unittest.TestCase):
     def test_archive_attributes_cannot_hide_tracked_sources(self):
@@ -149,6 +175,20 @@ class ContainerBoundary(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('SAST_REAL_TESTS') == '1', 'set SAST_REAL_TESTS=1 for pinned engine tests')
 class Engine(unittest.TestCase):
+    def test_separate_merge_gate_proof_sources_without_executing_them(self):
+        root = Path.cwd(); lock = s.rule_lock(root)
+        language = lock['language']
+        extension, repo = ('go', 'syuhei0519/backend-app') if language == 'go' else ('tsx', 'syuhei0519/frontend-app')
+        policy = s.decode((root / 'security/sast-policy.json').read_bytes())
+        for case, expected in [('semgrep', False), ('codeql', True)]:
+            targets = {'sast-verification.' + extension:
+                (root / 'security/sast-fixtures' / (case + '.' + extension + '.txt')).read_bytes()}
+            raw, code, _ = s.scan(root, targets)
+            result = s.evaluate(raw, code, targets, lock['rules'], policy, repo, dt.datetime.now(s.UTC))
+            self.assertIs(result['pass'], expected)
+            if expected:
+                self.assertEqual(result['findings'], [])
+
     def test_real_timeout_removes_owned_container(self):
         identifier = s.uuid.uuid4().hex
         name = 'plat-sast-' + identifier
@@ -175,7 +215,8 @@ class Engine(unittest.TestCase):
             bad['props.tsx'] = b'function Bad(props: {text: string}) { return <div dangerouslySetInnerHTML={{__html: props.text}} />; }\n'
             bad['browser.js'] = b'document.getElementById("demo").innerHTML = location.hash;\neval(location.hash);\n'
             parse = {'sample.tsx': b'export function Bad({text}) { return <div dangerouslySetInnerHTML={{__html: text}} />; @@@ }\n'}
-        policy = {'schemaVersion': 1, 'mode': 'enforce', 'blockingSeverities': ['ERROR', 'WARNING'], 'exceptions': []}
+        policy = {'schemaVersion': 2, 'mode': 'enforce', 'blockingSeverities': ['ERROR', 'WARNING'],
+                  'ruleModes': {rule: {'mode': 'enforce'} for rule in lock['rules']}, 'exceptions': []}
         evidence = []
         for name, targets, expected in [('clean', clean, True), ('finding-and-nosem', bad, False), ('parse-error', parse, None)]:
             raw, code, elapsed = s.scan(root, targets)
