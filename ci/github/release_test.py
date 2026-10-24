@@ -103,7 +103,7 @@ class WorkflowPublication(unittest.TestCase):
     def test_full_ci_and_explicit_status(self):
         # The graph has a skipped docs ancestor. Only test expression semantics;
         # protected-main scheduler/publication remains an integration check.
-        self.assertIn('needs: [classify, docs, validate, image]',self.block('ci-result'))
+        self.assertIn('needs: [classify, docs, validate, sast, image]',self.block('ci-result'))
         self.assertIn('if: always()',self.block('ci-result'))
         for job in ('publish','propose'):
             with self.subTest(job=job):

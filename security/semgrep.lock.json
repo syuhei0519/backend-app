@@ -1,0 +1,17 @@
+{
+  "version": "1.182.0",
+  "image": "semgrep/semgrep:1.182.0@sha256:4a34048c04fef049f71665047f074cffb00cc3d89482f965a5cd151d589237af",
+  "language": "go",
+  "upstream": "https://github.com/semgrep/semgrep-rules",
+  "upstreamCommit": "16b9e6d45f10649f6a531ec4838ed9924372c3bc",
+  "files": {
+    "dangerous-exec-command.yaml": "b6a8f7e4c80d8565e01bfe9566bcf0a611008075fbdbd965933bd657c5a65fb9",
+    "pgx-sqli.yaml": "8101fdc66fd53af2e66d53ec049eeb8007d57864ffefb28aa34fec3d51c72897",
+    "pgxpool-concatenated-query.yaml": "e40ca5fa22eaeafe295482fc23557629b1583a5f0af4b5cefec87617e8de4a3c"
+  },
+  "rules": {
+    "dangerous-exec-command": "ERROR",
+    "pgx-sqli": "ERROR",
+    "pgxpool-concatenated-query": "ERROR"
+  }
+}

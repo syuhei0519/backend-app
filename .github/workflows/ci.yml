@@ -95,8 +95,36 @@ jobs:
           path: .security/public/
           include-hidden-files: true
           retention-days: 30
+  sast:
+    needs: classify
+    if: needs.classify.outputs.docs != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: SAST policy and real engine fixtures
+        env:
+          SAST_REAL_TESTS: '1'
+        run: |
+          python3 -I ci/sast_test.py -v
+          python3 -I ci/sast-workflow_test.py -v
+          python3 -I ci/sonar-main_test.py -v
+      - name: Semgrep CE full tracked source scan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 -I ci/sast.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: sast-semgrep-${{ github.run_attempt }}
+          path: .security/sast/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
   image:
-    needs: validate
+    needs: [validate, sast]
     strategy:
       fail-fast: false
       matrix:
@@ -236,7 +264,7 @@ jobs:
 
   ci-result:
     if: always()
-    needs: [classify, docs, validate, image]
+    needs: [classify, docs, validate, sast, image]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -254,11 +282,13 @@ jobs:
           CLASSIFY: ${{ needs.classify.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
           VALIDATE: ${{ needs.validate.result }}
+          SAST: ${{ needs.sast.result }}
           IMAGE: ${{ needs.image.result }}
         run: |
           test "$CLASSIFY" = success
           if test "$DOCS" = true; then test "$DOCS_RESULT" = success; else
             test "$VALIDATE" = success
+            test "$SAST" = success
             test "$IMAGE" = success
             python3 -I ci/github/matrix-result.py
           fi
