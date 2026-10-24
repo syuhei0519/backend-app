@@ -103,3 +103,31 @@ func TestSDKCollectorMetricNames(t *testing.T) {
 	}
 	t.Logf("SDK actual OTLP cumulative7, seconds histogram7, instance=%s version=%s; scrape and names checked by acceptance script", obs.Instance, obs.Version)
 }
+
+// Destination/namespace pairing is checked without opening an exporter or socket.
+func TestCollectorNamespaceIdentityPairs(t *testing.T) {
+	old := "http://otel-collector.observability.svc.cluster.local:4318"
+	current := "http://account-release-otel-collector.observability.svc.cluster.local:4318"
+	for _, tc := range []struct {
+		name, endpoint, namespace, environment, version string
+		allowed                                         bool
+	}{
+		{"existing-account", old, "account", "local", fixtureVersion, true},
+		{"existing-kind-account", current, "learning-account-release", "local", fixtureVersion, true},
+		{"crossed-old", old, "learning-account-release", "local", fixtureVersion, false},
+		{"crossed-new", current, "account", "local", fixtureVersion, false},
+		{"other-namespace", current, "sonarqube", "local", fixtureVersion, false},
+		{"other-collector", "http://unknown.observability.svc.cluster.local:4318", "learning-account-release", "local", fixtureVersion, false},
+		{"wrong-environment", current, "learning-account-release", "production", fixtureVersion, false},
+		{"untrusted-source", current, "learning-account-release", "local", "unknown", false},
+		{"credential-url", "http://user:pass@account-release-otel-collector.observability.svc.cluster.local:4318", "learning-account-release", "local", fixtureVersion, false},
+		{"query-url", current + "?key=value", "learning-account-release", "local", fixtureVersion, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateDestination(tc.endpoint, tc.namespace, tc.environment, tc.version)
+			if (err == nil) != tc.allowed {
+				t.Fatalf("destination/identity decision mismatch: %v", err)
+			}
+		})
+	}
+}

@@ -60,17 +60,36 @@ func New(mp metric.MeterProvider, tp trace.TracerProvider, res *resource.Resourc
 	return &Telemetry{Tracer: tp.Tracer("account-backend"), Propagator: propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}), Resource: res, Instance: instance, Version: version, requests: requests, duration: duration}, nil
 }
 
+// The Collector and namespace are an exact identity pair. Keep historical account
+// telemetry working while permitting only the reviewed existing-kind Account target.
+func validateDestination(endpoint, namespace, environment, version string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return fmt.Errorf("invalid Collector endpoint")
+	}
+	expectedNamespace := "account"
+	switch u.Host {
+	case "otel-collector.observability.svc.cluster.local:4318":
+	case "account-release-otel-collector.observability.svc.cluster.local:4318":
+		expectedNamespace = "learning-account-release"
+	default:
+		if u.Hostname() != "localhost" && u.Hostname() != "127.0.0.1" {
+			return fmt.Errorf("invalid Collector endpoint")
+		}
+	}
+	if !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(version) || namespace != expectedNamespace || environment != "local" {
+		return fmt.Errorf("invalid deployment telemetry identity")
+	}
+	return nil
+}
+
 // プロセス起動ごとにinstance UUIDを作る。Pod UIDとは別なので同Pod内再起動でも区別できる。
 func Init(ctx context.Context, version string, logger *slog.Logger) (*Telemetry, error) {
 	instance := uuid.NewString()
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint != "" {
-		u, err := url.Parse(endpoint)
-		if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || (u.Host != "otel-collector.observability.svc.cluster.local:4318" && u.Hostname() != "localhost" && u.Hostname() != "127.0.0.1") {
-			return nil, fmt.Errorf("invalid Collector endpoint")
-		}
-		if !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(version) || os.Getenv("POD_NAMESPACE") != "account" || os.Getenv("DEPLOYMENT_ENVIRONMENT") != "local" {
-			return nil, fmt.Errorf("invalid deployment telemetry identity")
+		if err := validateDestination(endpoint, os.Getenv("POD_NAMESPACE"), os.Getenv("DEPLOYMENT_ENVIRONMENT"), version); err != nil {
+			return nil, err
 		}
 	}
 	// Resource属性は「誰が計測したか」を示す。versionはbuild時のsource SHA、instanceはプロセス寿命中固定。
