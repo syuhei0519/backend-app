@@ -1,9 +1,27 @@
 {
-  "schemaVersion": 1,
-  "mode": "observe",
+  "schemaVersion": 2,
+  "mode": "enforce",
   "blockingSeverities": [
     "ERROR",
     "WARNING"
   ],
+  "ruleModes": {
+    "dangerous-exec-command": {
+      "mode": "observe",
+      "owner": "syuhei0519",
+      "reason": "Eleven independently verified test-harness false positives; keep all audit results visible. Precise dynamic shell and SQL rules enforce. Review at most fourteen days.",
+      "createdAt": "2026-10-24T00:00:00Z",
+      "expiresAt": "2026-11-07T00:00:00Z"
+    },
+    "pgx-sqli": {
+      "mode": "enforce"
+    },
+    "pgxpool-concatenated-query": {
+      "mode": "enforce"
+    },
+    "dynamic-shell-command": {
+      "mode": "enforce"
+    }
+  },
   "exceptions": []
 }

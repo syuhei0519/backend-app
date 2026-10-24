@@ -41,6 +41,34 @@ func TestRenderedCredentialURLAndConfigMap(t *testing.T) {
 	}
 }
 
+func TestRenderedEmptySecretValues(t *testing.T) {
+	for _, data := range []string{
+		"kind: Secret\ndata: {}\nstringData: {}\n",
+		"kind: Secret\ndata:\n  empty: \"\"\nstringData:\n  PLUGINS-HTTP-PROXY: \"\"\n  PLUGINS-HTTPS-PROXY: \"\"\n",
+	} {
+		if findings, err := inspectYAML([]byte(data), "rendered/test.yaml"); err != nil || len(findings) != 0 {
+			t.Fatal("empty configuration must not be treated as a credential")
+		}
+	}
+	for _, data := range []string{
+		"kind: Secret\nstringData:\n  empty: \"\"\n  password: DO_NOT_EXPORT_672341\n",
+		"kind: Secret\ndata:\n  empty: \"\"\n  password: ZmFrZQ==\n",
+		"kind: Secret\nstringData:\n  password: ' '\n",
+		"kind: Secret\nstringData:\n  password: null\n",
+		"kind: Secret\nstringData:\n  password: false\n",
+		"kind: Secret\nstringData:\n  password: {}\n",
+		"kind: Secret\nstringData: []\n",
+		"kind: Secret\ndata: null\n",
+		"kind: Secret\nstringData:\n  42: \"\"\n",
+	} {
+		findings, err := inspectYAML([]byte(data), "rendered/test.yaml")
+		b, _ := json.Marshal(findings)
+		if err != nil || len(findings) != 1 || findings[0].Rule != "LOCAL-PLAINTEXT-SECRET" || strings.Contains(string(b), "DO_NOT_EXPORT_672341") {
+			t.Fatal("nonempty or malformed Secret bypassed the redacted hard gate")
+		}
+	}
+}
+
 func TestOnlyReadOnlySecretVolumeFileReferenceAllowed(t *testing.T) {
 	valid := "kind: Pod\nspec:\n  containers:\n  - name: db\n    env:\n    - name: POSTGRES_PASSWORD_FILE\n      value: /run/account-db/admin-password\n    volumeMounts:\n    - name: account-db\n      mountPath: /run/account-db\n      readOnly: true\n  volumes:\n  - name: account-db\n    secret: {secretName: operator-owned}\n"
 	if f, err := inspectYAML([]byte(valid), "rendered/db.yaml"); err != nil || len(f) != 0 {

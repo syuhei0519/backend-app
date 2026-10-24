@@ -156,7 +156,21 @@ func inspectYAML(data []byte, file string) ([]Finding, error) {
 			}
 			if kind := m["kind"]; kind != nil && kind.Value == "Secret" {
 				for _, key := range []string{"data", "stringData"} {
-					if v := m[key]; v != nil && len(v.Content) > 0 {
+					v := m[key]
+					if v == nil {
+						continue
+					}
+					// Empty strings contain no credential bytes, just like an empty
+					// map. Fail closed for every nonempty or malformed entry.
+					content := v.Kind != yaml.MappingNode || len(v.Content)%2 != 0
+					for i := 0; i+1 < len(v.Content); i += 2 {
+						k, value := v.Content[i], v.Content[i+1]
+						if k.Kind != yaml.ScalarNode || k.Tag != "!!str" ||
+							value.Kind != yaml.ScalarNode || value.Tag != "!!str" || value.Value != "" {
+							content = true
+						}
+					}
+					if content {
 						add("LOCAL-PLAINTEXT-SECRET")
 						break
 					}

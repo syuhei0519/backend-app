@@ -1,0 +1,27 @@
+rules:
+  - id: dynamic-shell-command
+    languages: [go]
+    severity: ERROR
+    message: Dynamic shell command requires review; prefer fixed executables and argument arrays.
+    metadata:
+      category: security
+      confidence: HIGH
+      cwe: ['CWE-78: OS Command Injection']
+      license: MIT
+    patterns:
+      - pattern-inside: |
+          import "os/exec"
+          ...
+      - pattern-either:
+          - patterns:
+              - pattern-either:
+                  - pattern: exec.Command("=~/(^|\/)(sh|bash|dash|ksh|csh|tcsh|zsh)$/", "-c", $CMD, ...)
+                  - pattern: exec.CommandContext($CTX, "=~/(^|\/)(sh|bash|dash|ksh|csh|tcsh|zsh)$/", "-c", $CMD, ...)
+              - pattern-not: exec.Command("...", "...", "...", ...)
+              - pattern-not: exec.CommandContext($CTX, "...", "...", "...", ...)
+          - patterns:
+              - pattern-either:
+                  - pattern: exec.Command("/usr/bin/env", "=~/^(sh|bash|dash|ksh|csh|tcsh|zsh)$/", "-c", $CMD, ...)
+                  - pattern: exec.CommandContext($CTX, "/usr/bin/env", "=~/^(sh|bash|dash|ksh|csh|tcsh|zsh)$/", "-c", $CMD, ...)
+              - pattern-not: exec.Command("...", "...", "...", "...", ...)
+              - pattern-not: exec.CommandContext($CTX, "...", "...", "...", "...", ...)
