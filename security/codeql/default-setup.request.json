@@ -1,0 +1,8 @@
+{
+  "state": "configured",
+  "languages": [
+    "go"
+  ],
+  "query_suite": "extended",
+  "threat_model": "remote"
+}

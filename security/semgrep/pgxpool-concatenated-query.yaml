@@ -1,0 +1,21 @@
+# Locally authored audit supplements the upstream pgx.Conn rule for pgx/v5 pools.
+rules:
+- id: pgxpool-concatenated-query
+  languages: [go]
+  severity: ERROR
+  message: Review dynamically constructed pgxpool SQL; use query parameters for user values.
+  metadata:
+    category: security
+    confidence: LOW
+    cwe: ['CWE-89: SQL Injection']
+  patterns:
+  - pattern-inside: |
+      import "github.com/jackc/pgx/v5/pgxpool"
+      ...
+  - pattern-either:
+    - pattern: $DB.$METHOD($CTX, $LEFT + $RIGHT, ...)
+    - pattern: $DB.$METHOD($CTX, fmt.Sprintf(...), ...)
+  - metavariable-regex:
+      metavariable: $METHOD
+      regex: ^(Exec|Query|QueryRow)$
+  - pattern-not: $DB.$METHOD($CTX, "..." + "...", ...)
