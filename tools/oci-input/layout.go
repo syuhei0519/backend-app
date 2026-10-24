@@ -326,6 +326,11 @@ func validateSource(archive, checksum, destination, commit, expectedSource strin
 		if e != nil {
 			return proof, fail()
 		}
+		// The exact OCI allowlist contains no ".." sequence. Make that rejection
+		// explicit on the original entry before normalization/data-flow tracking.
+		if strings.Contains(hdr.Name, "..") {
+			return proof, fail()
+		}
 		n := strings.TrimPrefix(hdr.Name, "./")
 		n = strings.TrimSuffix(n, "/")
 		if (hdr.Name == "." || hdr.Name == "./") && hdr.Typeflag == tar.TypeDir {
@@ -352,6 +357,11 @@ func validateSource(archive, checksum, destination, commit, expectedSource strin
 		}
 		total += hdr.Size
 		p := filepath.Join(dir, filepath.FromSlash(n))
+		// Keep an explicit destination boundary in addition to the exact OCI
+		// filename allowlist. This is also recognized by path-flow analyzers.
+		if !strings.HasPrefix(p, filepath.Clean(dir)+string(os.PathSeparator)) {
+			return proof, fail()
+		}
 		out, e := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if e != nil {
 			return proof, fail()
