@@ -48,7 +48,7 @@ does not claim GHCR publication or deployed AC-3.
 
 ## Independent verification
 
-Use Go 1.27.1 and Docker on the local Unix socket. Run bash ci/github/test.sh,
+Use Go 1.27.3 and Docker on the local Unix socket. Run bash ci/github/test.sh,
 go vet ./..., go test -race -count=1 ./..., and build both commands. Pull only the
 pinned PostgreSQL image, then run ORDER_DISPOSABLE_TEST=1 go test -race -count=1 ./...
 for B1 HTTP/DB persistence and Account regression. Optional Collector/kind tests

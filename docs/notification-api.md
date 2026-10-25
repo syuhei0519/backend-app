@@ -14,7 +14,7 @@ following documentation commit on the same PR. Dockerfile identity:
 `git rev-parse HEAD` and retain it alongside the image identity in deployment #22.
 The PR records the exact final head/base/tree.
 
-Platform: `linux/amd64`, Go 1.27.1; pinned builder/runtime bases match the Order
+Platform: `linux/amd64`, Go 1.27.3; pinned builder/runtime bases match the Order
 Dockerfile. Runtime UID/GID: 10001:10001. From the repository root:
 
 ```sh
