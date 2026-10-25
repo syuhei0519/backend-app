@@ -3,10 +3,23 @@ package config
 
 import (
 	"log/slog"
+	"os"
+	"strings"
 	"testing"
 )
 
+func clearRuntimeProfile(t *testing.T) {
+	t.Helper()
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if key == "DATABASE_URL" || key == "ACCOUNT_RUNTIME_PROFILE" || strings.HasPrefix(key, "ACCOUNT_RUNTIME_PROFILE_") || strings.HasPrefix(key, "PG") || strings.HasPrefix(key, "OTEL_EXPORTER_OTLP_") || key == "POD_NAMESPACE" || key == "POD_UID" || key == "DEPLOYMENT_ENVIRONMENT" {
+			t.Setenv(key, "")
+		}
+	}
+}
+
 func TestLogLevelConfig(t *testing.T) {
+	clearRuntimeProfile(t)
 	for _, test := range []struct {
 		value string
 		level slog.Level
@@ -22,5 +35,13 @@ func TestLogLevelConfig(t *testing.T) {
 	t.Setenv("LOG_LEVEL", "invalid")
 	if _, err := Load(); err == nil {
 		t.Fatal("invalid configuration accepted")
+	}
+}
+
+func TestUnknownRuntimeProfileRejected(t *testing.T) {
+	clearRuntimeProfile(t)
+	t.Setenv("ACCOUNT_RUNTIME_PROFILE", "unknown")
+	if _, err := Load(); err == nil {
+		t.Fatal("unknown runtime profile accepted")
 	}
 }

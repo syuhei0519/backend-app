@@ -4,6 +4,7 @@ package config
 
 import (
 	"errors"
+	"github.com/syuhei0519/backend-app/internal/runtimeprofile"
 	"log/slog"
 	"os"
 	"strings"
@@ -13,6 +14,7 @@ type Config struct {
 	Address     string
 	DatabaseURL string
 	LogLevel    slog.Level
+	Profile     *runtimeprofile.Profile
 }
 
 // LOG_LEVELの許可値を検証し、不正値なら起動を止める。DB URLの実値はログへ出さない。
@@ -24,5 +26,9 @@ func Load() (Config, error) {
 	if !ok {
 		return Config{}, errors.New("LOG_LEVEL must be debug, info, warn or error")
 	}
-	return Config{Address: "0.0.0.0:8080", DatabaseURL: os.Getenv("DATABASE_URL"), LogLevel: level}, nil
+	profile, err := runtimeprofile.Load()
+	if err != nil {
+		return Config{}, err
+	}
+	return Config{Address: "0.0.0.0:8080", DatabaseURL: os.Getenv("DATABASE_URL"), LogLevel: level, Profile: profile}, nil
 }
