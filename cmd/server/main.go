@@ -76,9 +76,9 @@ func main() {
 	}()
 	store.SetTelemetry(observation)
 	handler := httpapi.NewWithTelemetry(account.New(store), store, logger, observation)
-	// ヘッダー読込5秒、応答書込10秒、idle60秒で接続の占有を制限する。数値の詳細な選定根拠は資料にない。
+	// ヘッダー読込5秒、本文を含む要求読込10秒、応答書込10秒、idle60秒で接続の占有を制限する。数値の詳細な選定根拠は資料にない。
 	// 前段Nginxの5秒timeoutとは別の上限で、利用者には先にNginx側の失敗が返る場合がある。
-	server := &http.Server{Addr: cfg.Address, Handler: handler, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
+	server := newHTTPServer(cfg.Address, handler, 10*time.Second)
 	stopped := make(chan error, 1)
 	go func() { stopped <- server.ListenAndServe() }()
 	// contextは中断・期限を処理間で伝える器。SIGTERM/SIGINTを受けたらDoneが閉じる。
@@ -105,5 +105,16 @@ func main() {
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("shutdown failed", "error", err)
 		os.Exit(1)
+	}
+}
+
+func newHTTPServer(address string, handler http.Handler, readTimeout time.Duration) *http.Server {
+	return &http.Server{
+		Addr:              address,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 }
