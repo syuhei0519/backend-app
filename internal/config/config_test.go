@@ -2,6 +2,7 @@
 package config
 
 import (
+	"github.com/syuhei0519/backend-app/internal/runtimeprofile"
 	"log/slog"
 	"os"
 	"strings"
@@ -26,14 +27,14 @@ func TestLogLevelConfig(t *testing.T) {
 	}{{"", slog.LevelInfo}, {"DEBUG", slog.LevelDebug}, {"info", slog.LevelInfo}, {"warn", slog.LevelWarn}, {"error", slog.LevelError}} {
 		t.Run(test.value, func(t *testing.T) {
 			t.Setenv("LOG_LEVEL", test.value)
-			cfg, err := Load()
+			cfg, err := Load(runtimeprofile.OperationRuntime)
 			if err != nil || cfg.LogLevel != test.level {
 				t.Fatalf("level=%v err=%v", cfg.LogLevel, err)
 			}
 		})
 	}
 	t.Setenv("LOG_LEVEL", "invalid")
-	if _, err := Load(); err == nil {
+	if _, err := Load(runtimeprofile.OperationRuntime); err == nil {
 		t.Fatal("invalid configuration accepted")
 	}
 }
@@ -41,7 +42,7 @@ func TestLogLevelConfig(t *testing.T) {
 func TestUnknownRuntimeProfileRejected(t *testing.T) {
 	clearRuntimeProfile(t)
 	t.Setenv("ACCOUNT_RUNTIME_PROFILE", "unknown")
-	if _, err := Load(); err == nil {
+	if _, err := Load(runtimeprofile.OperationRuntime); err == nil {
 		t.Fatal("unknown runtime profile accepted")
 	}
 }
@@ -49,12 +50,12 @@ func TestUnknownRuntimeProfileRejected(t *testing.T) {
 func TestAccountAddressIsFinite(t *testing.T) {
 	clearRuntimeProfile(t)
 	t.Setenv("ACCOUNT_HTTP_ADDRESS", "127.0.0.1:18081")
-	got, err := Load()
+	got, err := Load(runtimeprofile.OperationRuntime)
 	if err != nil || got.Address != "127.0.0.1:18081" {
 		t.Fatalf("address=%q err=%v", got.Address, err)
 	}
 	t.Setenv("ACCOUNT_HTTP_ADDRESS", "not-an-address")
-	if _, err := Load(); err == nil {
+	if _, err := Load(runtimeprofile.OperationRuntime); err == nil {
 		t.Fatal("invalid Account address accepted")
 	}
 }

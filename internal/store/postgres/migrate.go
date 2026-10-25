@@ -4,6 +4,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,22 +28,67 @@ type migrationPreparationConn interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
+type migrationStatements struct {
+	create, exists, insert, searchPath string
+}
+
+var (
+	legacyMigrationSQL = migrationStatements{
+		create: `CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+		exists: `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`,
+		insert: `INSERT INTO schema_migrations(version) VALUES($1)`,
+	}
+	publicMigrationSQL = migrationStatements{
+		create:     `CREATE TABLE IF NOT EXISTS public.schema_migrations(version INTEGER PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+		exists:     `SELECT EXISTS(SELECT 1 FROM public.schema_migrations WHERE version=$1)`,
+		insert:     `INSERT INTO public.schema_migrations(version) VALUES($1)`,
+		searchPath: `SET LOCAL search_path TO public, pg_catalog`,
+	}
+	freshMigrationSQL = migrationStatements{
+		create:     `CREATE TABLE IF NOT EXISTS account.schema_migrations(version INTEGER PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+		exists:     `SELECT EXISTS(SELECT 1 FROM account.schema_migrations WHERE version=$1)`,
+		insert:     `INSERT INTO account.schema_migrations(version) VALUES($1)`,
+		searchPath: `SET LOCAL search_path TO account, pg_catalog`,
+	}
+)
+
+func migrationStatementsFor(profile *runtimeprofile.Profile) migrationStatements {
+	if profile == nil {
+		return legacyMigrationSQL
+	}
+	switch profile.SchemaName {
+	case "public":
+		return publicMigrationSQL
+	case "account":
+		return freshMigrationSQL
+	default:
+		return migrationStatements{}
+	}
+}
+
 // 最初のadvisory lock・DDLより前に実DB identityを照合する。この読取に履歴tableは不要。
 func prepareMigration(ctx context.Context, conn migrationPreparationConn, profile *runtimeprofile.Profile) (bool, error) {
 	if profile != nil {
-		var database, role, owner string
-		err := conn.QueryRow(ctx, `SELECT current_database(),current_user,pg_get_userbyid(d.datdba) FROM pg_database AS d WHERE d.datname=current_database()`).Scan(&database, &role, &owner)
+		if profile.Operation() != runtimeprofile.OperationMigrate {
+			return false, errors.New("Account migration profile rejected")
+		}
+		var database, role, owner, schemaOwner string
+		err := conn.QueryRow(ctx, `SELECT current_database(),current_user,pg_get_userbyid(d.datdba),pg_get_userbyid(n.nspowner) FROM pg_database AS d JOIN pg_namespace AS n ON n.nspname=$1 WHERE d.datname=current_database()`, profile.SchemaName).Scan(&database, &role, &owner, &schemaOwner)
 		if err != nil {
 			return false, err
 		}
-		if err := profile.ValidateDatabaseIdentity(database, role, owner); err != nil {
+		if err := profile.ValidateDatabaseIdentity(database, role, owner, schemaOwner); err != nil {
 			return false, err
 		}
 	}
 	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
 		return false, err
 	}
-	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
+	statements := migrationStatementsFor(profile)
+	if statements.create == "" {
+		return false, errors.New("Account migration schema rejected")
+	}
+	if _, err := conn.Exec(ctx, statements.create); err != nil {
 		return true, err
 	}
 	return true, nil
@@ -81,7 +127,12 @@ func (s *Store) Migrate(parent context.Context) error {
 	if locked, err = prepareMigration(ctx, conn, s.profile); err != nil {
 		return err
 	}
-	state := schemahistory.Inspect(ctx, conn, "public.schema_migrations")
+	historyTable := s.migrationHistoryTable()
+	statements := migrationStatementsFor(s.profile)
+	if statements.exists == "" {
+		return account.ErrUnavailable
+	}
+	state := schemahistory.Inspect(ctx, conn, historyTable)
 	if !schemahistory.C0MigrationAllowed(state) {
 		return account.ErrUnavailable
 	}
@@ -103,7 +154,7 @@ func (s *Store) Migrate(parent context.Context) error {
 			return err
 		}
 		var applied bool
-		if err = conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
+		if err = conn.QueryRow(ctx, statements.exists, version).Scan(&applied); err != nil {
 			return err
 		}
 		// schema_migrationsにあるversionは再実行しない。履歴にはSQL checksumを保存しないので既存SQLの改変検出とは別。
@@ -114,11 +165,11 @@ func (s *Store) Migrate(parent context.Context) error {
 		if err != nil {
 			return err
 		}
-		if err = applyMigration(ctx, conn, version, string(script)); err != nil {
+		if err = applyMigration(ctx, conn, s.profile, version, string(script)); err != nil {
 			return err
 		}
 	}
-	if !schemahistory.C0Ready(schemahistory.Inspect(ctx, conn, "public.schema_migrations")) {
+	if !schemahistory.C0Ready(schemahistory.Inspect(ctx, conn, historyTable)) {
 		return account.ErrUnavailable
 	}
 	return nil
@@ -126,7 +177,7 @@ func (s *Store) Migrate(parent context.Context) error {
 
 // transactionはSQL変更と履歴INSERTをまとめて確定する単位。同じ接続で開始し両方成功した時だけcommit。
 // エラーや中断は独立5秒contextでrollbackを試みる。commit後のRollbackは無効だが戻り値を捨てている。
-func applyMigration(ctx context.Context, conn *pgxpool.Conn, version int, script string) error {
+func applyMigration(ctx context.Context, conn *pgxpool.Conn, profile *runtimeprofile.Profile, version int, script string) error {
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return err
@@ -136,10 +187,19 @@ func applyMigration(ctx context.Context, conn *pgxpool.Conn, version int, script
 		defer cancel()
 		_ = tx.Rollback(cleanup)
 	}()
+	statements := migrationStatementsFor(profile)
+	if statements.insert == "" {
+		return errors.New("Account migration schema rejected")
+	}
+	if statements.searchPath != "" {
+		if _, err = tx.Exec(ctx, statements.searchPath); err != nil {
+			return err
+		}
+	}
 	if _, err = tx.Exec(ctx, script); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES($1)`, version); err != nil {
+	if _, err = tx.Exec(ctx, statements.insert, version); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

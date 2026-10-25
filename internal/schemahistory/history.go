@@ -102,12 +102,13 @@ type Queryer interface {
 
 var historyQueries = map[string]string{
 	"public.schema_migrations":              `SELECT version FROM public.schema_migrations ORDER BY version`,
+	"account.schema_migrations":             `SELECT version FROM account.schema_migrations ORDER BY version`,
 	"public.order_schema_migrations":        `SELECT version FROM public.order_schema_migrations ORDER BY version`,
 	"public.payment_schema_migrations":      `SELECT version FROM public.payment_schema_migrations ORDER BY version`,
 	"public.notification_schema_migrations": `SELECT version FROM public.notification_schema_migrations ORDER BY version`,
 }
 
-// Inspect reads only one of the four fixed migration-history tables. The
+// Inspect reads only one of the fixed migration-history tables. The
 // allow-list prevents a caller from turning a table name into SQL.
 func Inspect(ctx context.Context, q Queryer, table string) State {
 	query, ok := historyQueries[table]

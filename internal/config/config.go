@@ -19,7 +19,7 @@ type Config struct {
 }
 
 // LOG_LEVELの許可値を検証し、不正値なら起動を止める。DB URLの実値はログへ出さない。
-func Load() (Config, error) {
+func Load(operation runtimeprofile.Operation) (Config, error) {
 	// DATABASE_URLが空ならpgxがPGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODEを読む。
 	// Secretのキーを個別の環境変数へ注入でき、manifest内で資格情報入りURLを組み立てずに済む。
 	levels := map[string]slog.Level{"": slog.LevelInfo, "debug": slog.LevelDebug, "info": slog.LevelInfo, "warn": slog.LevelWarn, "error": slog.LevelError}
@@ -27,7 +27,7 @@ func Load() (Config, error) {
 	if !ok {
 		return Config{}, errors.New("LOG_LEVEL must be debug, info, warn or error")
 	}
-	profile, err := runtimeprofile.Load()
+	profile, err := runtimeprofile.Load(operation)
 	if err != nil {
 		return Config{}, err
 	}

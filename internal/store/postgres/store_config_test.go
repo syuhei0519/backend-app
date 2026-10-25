@@ -32,3 +32,54 @@ func TestDatabaseParseErrorDoesNotLeakInput(t *testing.T) {
 		})
 	}
 }
+
+func TestProfileRelationsAndRuntimeReadiness(t *testing.T) {
+	profileValue, err := (runtimeprofile.Profile{
+		DatabaseName:          "account",
+		RuntimeDatabaseRole:   "account_runtime",
+		MigrationDatabaseRole: "account_migrator",
+		DatabaseOwner:         "postgres",
+		SchemaName:            "account",
+		SchemaOwner:           "account_migrator",
+	}).ForOperation(runtimeprofile.OperationRuntime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := &profileValue
+	if got := profileRelation(profile, "accounts"); got != `"account"."accounts"` {
+		t.Fatalf("account relation = %q", got)
+	}
+	if got := profileRelation(nil, "accounts"); got != "accounts" {
+		t.Fatalf("legacy relation = %q", got)
+	}
+	if got := profileHistoryTable(profile); got != "account.schema_migrations" {
+		t.Fatalf("account history = %q", got)
+	}
+	if got := accountStatementsFor(profile); !strings.Contains(got.list, "FROM account.accounts") || got.create == "" || got.update == "" || got.delete == "" {
+		t.Fatal("fresh Account SQL is not fixed")
+	}
+	if got := accountStatementsFor(&runtimeprofile.Profile{SchemaName: "other"}); got != (accountStatements{}) {
+		t.Fatal("unreviewed Account schema accepted")
+	}
+	if err := validateRuntimeIdentity(profile, "account", "account_runtime", "postgres", "account_migrator"); err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []struct {
+		role        string
+		schemaOwner string
+	}{
+		{"account_migrator", "account_migrator"},
+		{"account_runtime", "other"},
+	} {
+		if err := validateRuntimeIdentity(profile, "account", state.role, "postgres", state.schemaOwner); err == nil {
+			t.Fatalf("invalid readiness accepted: %+v", state)
+		}
+	}
+	migrationProfile, err := profileValue.ForOperation(runtimeprofile.OperationMigrate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRuntimeIdentity(&migrationProfile, "account", "account_migrator", "postgres", "account_migrator"); err == nil {
+		t.Fatal("migration operation accepted by runtime readiness")
+	}
+}

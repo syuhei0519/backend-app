@@ -12,10 +12,11 @@ import (
 )
 
 type migrationIdentityRow struct {
-	database string
-	role     string
-	owner    string
-	err      error
+	database    string
+	role        string
+	owner       string
+	schemaOwner string
+	err         error
 }
 
 func (r migrationIdentityRow) Scan(dest ...any) error {
@@ -25,6 +26,7 @@ func (r migrationIdentityRow) Scan(dest ...any) error {
 	*(dest[0].(*string)) = r.database
 	*(dest[1].(*string)) = r.role
 	*(dest[2].(*string)) = r.owner
+	*(dest[3].(*string)) = r.schemaOwner
 	return nil
 }
 
@@ -50,18 +52,26 @@ func (f *migrationGuardFixture) Exec(_ context.Context, sql string, _ ...any) (p
 }
 
 func TestMigrationIdentityRejectionPerformsNoWrite(t *testing.T) {
-	profile := &runtimeprofile.Profile{
-		DatabaseName:  "account",
-		DatabaseRole:  "account_app",
-		DatabaseOwner: "account_app",
+	profileValue, err := (runtimeprofile.Profile{
+		DatabaseName:          "account",
+		RuntimeDatabaseRole:   "account_runtime",
+		MigrationDatabaseRole: "account_migrator",
+		DatabaseOwner:         "postgres",
+		SchemaName:            "account",
+		SchemaOwner:           "account_migrator",
+	}).ForOperation(runtimeprofile.OperationMigrate)
+	if err != nil {
+		t.Fatal(err)
 	}
+	profile := &profileValue
 	for _, test := range []struct {
 		name string
 		row  migrationIdentityRow
 	}{
-		{"wrong-database", migrationIdentityRow{database: "other", role: "account_app", owner: "account_app"}},
-		{"wrong-role", migrationIdentityRow{database: "account", role: "other", owner: "account_app"}},
-		{"wrong-owner", migrationIdentityRow{database: "account", role: "account_app", owner: "unexpected_owner"}},
+		{"wrong-database", migrationIdentityRow{database: "other", role: "account_migrator", owner: "postgres", schemaOwner: "account_migrator"}},
+		{"runtime-role", migrationIdentityRow{database: "account", role: "account_runtime", owner: "postgres", schemaOwner: "account_migrator"}},
+		{"wrong-owner", migrationIdentityRow{database: "account", role: "account_migrator", owner: "unexpected_owner", schemaOwner: "account_migrator"}},
+		{"wrong-schema-owner", migrationIdentityRow{database: "account", role: "account_migrator", owner: "postgres", schemaOwner: "unexpected_owner"}},
 		{"query-failure", migrationIdentityRow{err: errors.New("fixture unavailable")}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -73,7 +83,7 @@ func TestMigrationIdentityRejectionPerformsNoWrite(t *testing.T) {
 			if locked || fixture.writeCount != 0 {
 				t.Fatalf("identity rejection reached a write: locked=%v writes=%d", locked, fixture.writeCount)
 			}
-			if fixture.readCount != 1 || !strings.Contains(fixture.query, "pg_database") || strings.Contains(fixture.query, "schema_migrations") {
+			if fixture.readCount != 1 || !strings.Contains(fixture.query, "pg_database") || !strings.Contains(fixture.query, "pg_namespace") || strings.Contains(fixture.query, "schema_migrations") {
 				t.Fatalf("identity guard query = %q reads=%d", fixture.query, fixture.readCount)
 			}
 		})
@@ -81,8 +91,12 @@ func TestMigrationIdentityRejectionPerformsNoWrite(t *testing.T) {
 }
 
 func TestMigrationIdentityProofPrecedesLockAndDDL(t *testing.T) {
-	profile := &runtimeprofile.Profile{DatabaseName: "account", DatabaseRole: "account_app", DatabaseOwner: "account_app"}
-	fixture := &migrationGuardFixture{row: migrationIdentityRow{database: "account", role: "account_app", owner: "account_app"}}
+	profileValue, err := (runtimeprofile.Profile{DatabaseName: "account", RuntimeDatabaseRole: "account_runtime", MigrationDatabaseRole: "account_migrator", DatabaseOwner: "postgres", SchemaName: "account", SchemaOwner: "account_migrator"}).ForOperation(runtimeprofile.OperationMigrate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := &profileValue
+	fixture := &migrationGuardFixture{row: migrationIdentityRow{database: "account", role: "account_migrator", owner: "postgres", schemaOwner: "account_migrator"}}
 	locked, err := prepareMigration(context.Background(), fixture, profile)
 	if err != nil || !locked {
 		t.Fatalf("migration preparation failed: locked=%v err=%v", locked, err)
@@ -92,5 +106,42 @@ func TestMigrationIdentityProofPrecedesLockAndDDL(t *testing.T) {
 	}
 	if len(fixture.events) != 3 || fixture.events[0] != "read" || !strings.Contains(fixture.events[1], "pg_advisory_lock") || !strings.Contains(fixture.events[2], "CREATE TABLE") {
 		t.Fatalf("migration preparation order = %q", fixture.events)
+	}
+	if !strings.Contains(fixture.events[2], `account.schema_migrations`) {
+		t.Fatalf("migration table is not schema-qualified: %q", fixture.events[2])
+	}
+}
+
+func TestMigrationStatementsAreFinite(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		profile *runtimeprofile.Profile
+		create  string
+	}{
+		{"legacy", nil, "schema_migrations"},
+		{"current", &runtimeprofile.Profile{SchemaName: "public"}, "public.schema_migrations"},
+		{"fresh", &runtimeprofile.Profile{SchemaName: "account"}, "account.schema_migrations"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			statements := migrationStatementsFor(test.profile)
+			if !strings.Contains(statements.create, test.create) || statements.exists == "" || statements.insert == "" {
+				t.Fatal("fixed migration statements missing")
+			}
+		})
+	}
+	if statements := migrationStatementsFor(&runtimeprofile.Profile{SchemaName: "other"}); statements != (migrationStatements{}) {
+		t.Fatal("unreviewed migration schema accepted")
+	}
+}
+
+func TestRuntimeProfileCannotEnterMigrationPreparation(t *testing.T) {
+	profileValue, err := (runtimeprofile.Profile{RuntimeDatabaseRole: "account_runtime", MigrationDatabaseRole: "account_migrator"}).ForOperation(runtimeprofile.OperationRuntime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := &migrationGuardFixture{}
+	locked, err := prepareMigration(context.Background(), fixture, &profileValue)
+	if err == nil || locked || fixture.readCount != 0 || fixture.writeCount != 0 {
+		t.Fatalf("runtime profile reached migration: locked=%v reads=%d writes=%d err=%v", locked, fixture.readCount, fixture.writeCount, err)
 	}
 }

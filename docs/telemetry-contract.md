@@ -8,12 +8,16 @@ The non-secret destination and resource namespace form an exact pair:
 | --- | --- |
 | otel-collector.observability.svc.cluster.local:4318 | account (historical target) |
 | account-release-otel-collector.observability.svc.cluster.local:4318 | learning-account-release |
+| otel-collector.fresh-observability.svc.cluster.local:4318 | fresh-account |
 
 The current manifest obtains namespace and Pod UID through the Downward API.
 Use the actual namespace; retain the build-time source SHA and environment=local.
 Crossed destination/namespace pairs, unknown destinations, credentials/query URLs
 and invalid source identities are rejected. The existing loopback test contract
-retains its account namespace. Keep telemetry enabled for integrated acceptance.
+retains its account namespace. The `learning-account-release` pair is retained
+only for no-profile rollback compatibility; the finite `fresh-account` runtime
+profile uses the `fresh-observability` pair. Keep telemetry enabled for
+integrated acceptance.
 
 Supply images from checked OCI artifacts of fixed protected-main revisions,
 verifying archive/manifest/config/source identity and the existing policy evidence.

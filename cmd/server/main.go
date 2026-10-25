@@ -9,6 +9,7 @@ import (
 	"github.com/syuhei0519/backend-app/internal/account"
 	"github.com/syuhei0519/backend-app/internal/config"
 	"github.com/syuhei0519/backend-app/internal/httpapi"
+	"github.com/syuhei0519/backend-app/internal/runtimeprofile"
 	"github.com/syuhei0519/backend-app/internal/store/postgres"
 	"github.com/syuhei0519/backend-app/internal/telemetry"
 	"io"
@@ -37,7 +38,11 @@ func newLogger(out io.Writer, level slog.Level) *slog.Logger {
 // os.Exit は defer を実行しないため、異常終了時の接続解放やtelemetry flushを保証するコードではない。
 func main() {
 	logger := newLogger(os.Stdout, slog.LevelInfo)
-	cfg, err := config.Load()
+	operation, ok := operationFromArgs(os.Args)
+	if !ok {
+		os.Exit(2)
+	}
+	cfg, err := config.Load(operation)
 	if err != nil {
 		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
@@ -53,15 +58,12 @@ func main() {
 	defer store.Close()
 	// migrateはHTTPを起動しない。移行成功は0で終了し、ArgoがJob成功後にDeploymentへ進む。
 	// 関連: application-manifest/charts/backend/templates/migration-job.yaml。
-	if len(os.Args) == 2 && os.Args[1] == "migrate" {
+	if operation == runtimeprofile.OperationMigrate {
 		if err := store.Migrate(context.Background()); err != nil {
 			logger.Error("migration failed", "error", err)
 			os.Exit(1)
 		}
 		return
-	}
-	if len(os.Args) != 1 {
-		os.Exit(2)
 	}
 	logger.Info("server starting", "log_level", cfg.LogLevel.String(), "build_version", version)
 	observation, err := telemetry.Init(context.Background(), buildCommit, logger)
@@ -106,6 +108,16 @@ func main() {
 		logger.Error("shutdown failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+func operationFromArgs(args []string) (runtimeprofile.Operation, bool) {
+	if len(args) == 1 {
+		return runtimeprofile.OperationRuntime, true
+	}
+	if len(args) == 2 && args[1] == "migrate" {
+		return runtimeprofile.OperationMigrate, true
+	}
+	return "", false
 }
 
 func newHTTPServer(address string, handler http.Handler, readTimeout time.Duration) *http.Server {
