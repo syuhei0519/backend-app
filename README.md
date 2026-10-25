@@ -47,7 +47,7 @@ Account・Order・Payment・Notification の API と、各サービスの専用 
 | [payment-migrations/](payment-migrations) | Payment 専用 DB の migration。既存の SQL は適用履歴として保持します。 |
 | [performance/](performance) | 負荷と待ち時間の検証。account は上限を設けた読み取り負荷の入口です。 |
 | [security/](security/README.md) | 検査の合否条件と schema。アプリの機能設定とは分けて管理します。 |
-| [tests/](tests) | サービスをつなぐ結合試験。実環境が必要なものは明示的な有効化条件を確認します。 |
+| [tests/](tests/README.md) | サービスをつなぐ結合試験。実環境が必要なものは明示的な有効化条件を確認します。 |
 | [tools/](tools/README.md) | CI から呼ぶ Go ツールと、共有ツールの利用手順。 |
 
 ### 本文にコメントを入れないファイル
