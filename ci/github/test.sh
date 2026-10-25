@@ -16,6 +16,7 @@ done
  done)
 (cd tools/release-record; CGO_ENABLED=0 go build -trimpath -o ../../.security/sbom-check ./cmd/sbom-check)
 python3 -I ci/github/order-release_test.py
+python3 -I ci/github/classify_test.py
 python3 -I ci/github/fixtures/m0/release_test.py
 python3 -I ci/github/build-ca_test.py
 python3 -I ci/github/image-policy_test.py

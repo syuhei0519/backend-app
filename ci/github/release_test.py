@@ -40,10 +40,50 @@ class Boundary(unittest.TestCase):
             with self.assertRaises(ValueError):m.verify_latest_run('owner/backend-app','a'*40,123,1)
     def test_values_patch_preserves_configuration(self):
         text='telemetry:\n  enabled: true\nimage:\n  repository: "old"\n  tag: "old"\n  digest: "old"\n# comment\nrelease:\n  sourceProjectId: "old"\n  sourceCommit: "old"\nconfig:\n  dbName: account\n'
-        record={'imageRepository':'ghcr.io/owner/backend-app','imageDigest':'sha256:'+'b'*64,'runId':123,'runAttempt':1,'sbomSha256':'c'*64}
+        record={'imageRepository':'ghcr.io/owner/backend-app','imageDigest':'sha256:'+'b'*64,'runId':123,'runAttempt':1,
+                'workflowRef':'owner/backend-app/.github/workflows/ci.yml@refs/heads/main','sbomSha256':'c'*64}
         result=m.patch_values(text,'owner/backend-app','a'*40,record,{'release-record.json':'record-url','sbom.cdx.json':'sbom-url'},'d'*64)
         self.assertIn('telemetry:\n  enabled: true',result);self.assertIn('config:\n  dbName: account',result)
         self.assertIn('schemaVersion: "github-v1"',result);self.assertNotIn('sourceProjectId',result)
+        self.assertIn('event: "push"',result);self.assertIn('ref: "refs/heads/main"',result)
+        self.assertIn('workflowRef: "owner/backend-app/.github/workflows/ci.yml@refs/heads/main"',result)
+    def test_current_runtime_profile_patch_is_finite(self):
+        fixture=Path(__file__).with_name('fixtures')/'account-runtime-profile.yaml'
+        before=fixture.read_text(encoding='utf-8')
+        record={'imageRepository':'ghcr.io/owner/backend-app','imageDigest':'sha256:'+'c'*64}
+        after=m.patch_runtime_profile(before,'owner/backend-app','d'*40,record)
+        profile=m.parse_runtime_profile(after)
+        self.assertEqual(profile,{
+            'owner':'plat170-account','sourceCommit':'d'*40,
+            'imageRevision':'sha256-'+'c'*56,
+            'image':'ghcr.io/owner/backend-app@sha256:'+'c'*64,
+            'strategy':'Canary','promotionMode':'auto','analysisPluginEnabled':True})
+        for preserved in ('owner: plat170-account','strategy: Canary','promotionMode: auto',
+                          'analysisPluginEnabled: true'):
+            self.assertIn(preserved,after)
+        self.assertNotIn('runId',after);self.assertNotIn('workflowRef',after)
+    def test_runtime_profile_patch_rejects_malformed_or_unapproved_input(self):
+        fixture=(Path(__file__).with_name('fixtures')/'account-runtime-profile.yaml').read_text(encoding='utf-8')
+        invalid=(fixture+'owner: plat170-account\n',
+                 fixture+'unknown: value\n',
+                 fixture.replace('owner: plat170-account\n',''),
+                 fixture.replace('owner: plat170-account','owner: another-owner'),
+                 fixture.replace('strategy: Canary','strategy: Rolling'),
+                 fixture.replace('analysisPluginEnabled: true','analysisPluginEnabled: false'),
+                 fixture.replace('image: ghcr.io/owner/backend-app@','image:\n  repository: ghcr.io/owner/backend-app@'))
+        record={'imageRepository':'ghcr.io/owner/backend-app','imageDigest':'sha256:'+'c'*64}
+        for text in invalid:
+            with self.subTest(text=text),self.assertRaises(ValueError):
+                m.patch_runtime_profile(text,'owner/backend-app','d'*40,record)
+        for changed in ({'imageRepository':'ghcr.io/other/backend-app'},
+                        {'imageDigest':'sha256:bad'},
+                        {'service':'order'}):
+            with self.subTest(changed=changed),self.assertRaises(ValueError):
+                m.patch_runtime_profile(fixture,'owner/backend-app','d'*40,{**record,**changed})
+    def test_proposal_targets_only_current_profile(self):
+        self.assertEqual(m.proposal_path('backend'),'learning/account-release/runtime-profile.yaml')
+        for service in ('order','frontend','unknown'):
+            with self.subTest(service=service),self.assertRaises(ValueError):m.proposal_path(service)
     def test_record_rejects_untrusted_workflow_and_failed_scan(self):
         record={'schema':m.SCHEMA,'repository':'owner/backend-app','sourceCommit':'a'*40,'runId':123,'runAttempt':1,
           'workflowRef':'owner/backend-app/.github/workflows/ci.yml@refs/heads/main','imageRepository':'ghcr.io/owner/backend-app',
@@ -64,7 +104,7 @@ class WorkflowPublication(unittest.TestCase):
     """
     @classmethod
     def setUpClass(cls):
-        cls.workflow=(Path(__file__).resolve().parents[2]/'.github/workflows/ci.yml').read_text()
+        cls.workflow=(Path(__file__).resolve().parents[2]/'.github/workflows/ci.yml').read_text(encoding='utf-8')
 
     def block(self,name):
         matches=re.findall(r'^  '+re.escape(name)+r':\n(.*?)(?=^  [a-z][a-z-]*:|\Z)',self.workflow,re.M|re.S)

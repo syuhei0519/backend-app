@@ -359,25 +359,91 @@ def patch_values(text,repo,commit,result,urls,record_hash):
     text=text[:image.start()]+block+text[image.end():]
     release=re.search(r'^release:\s*\n(?:[ \t]+[^\n]*\n)*',text,re.M);require(release)
     values={'schemaVersion':annotation,'sourceRepository':repo,'sourceCommit':commit,'runId':str(result['runId']),
-            'runAttempt':str(result['runAttempt']),'recordUrl':urls['release-record.json'],'recordSha256':record_hash,
+            'runAttempt':str(result['runAttempt']),
+            'recordUrl':urls['release-record.json'],'recordSha256':record_hash,
             'sbomUrl':urls['sbom.cdx.json'],'sbomSha256':result['sbomSha256']}
-    if service=='order':values['service']='order'
+    if service=='order':
+        # Order remains on the frozen M0 consumer contract until its current
+        # profile is adopted.  Do not silently widen that values surface.
+        values['service']='order'
+    else:
+        values.update({'event':'push','ref':'refs/heads/main','workflowRef':result['workflowRef']})
     block='release:\n'+''.join('  '+key+': '+json.dumps(value)+'\n' for key,value in values.items())
     return text[:release.start()]+block+text[release.end():]
+
+def profile_scalar(raw):
+    if raw in ('true','false','null'):
+        return {'true':True,'false':False,'null':None}[raw]
+    if raw.startswith('"'):
+        value=decode(raw)
+        require(isinstance(value,str))
+        return value
+    require(re.fullmatch(r'[A-Za-z0-9./_@:-]+',raw))
+    return raw
+
+def parse_runtime_profile(text):
+    # The current Account consumer is a finite, flat values file. Refuse YAML
+    # aliases, nesting, duplicate/unknown keys and comments rather than using a
+    # general-purpose parser in the publication path.
+    require(isinstance(text,str) and text.endswith('\n') and '\r' not in text)
+    pairs=[]
+    for line in text.splitlines():
+        match=re.fullmatch(r'([A-Za-z][A-Za-z0-9]*): ([^#\n]+)',line)
+        require(match)
+        pairs.append((match[1],profile_scalar(match[2])))
+    profile=unique(pairs)
+    required={'owner','sourceCommit','imageRevision','image','strategy','promotionMode','analysisPluginEnabled'}
+    require(set(profile) in (required,required|{'bootstrapHash'}))
+    require(profile['owner']=='plat170-account' and SHA.fullmatch(profile['sourceCommit']) and
+            re.fullmatch(r'sha256-[a-f0-9]{56}',profile['imageRevision']) and
+            re.fullmatch(r'[a-z0-9./_-]+@sha256:[a-f0-9]{64}',profile['image']))
+    require(profile['strategy'] in ('Canary','Rolling') and type(profile['analysisPluginEnabled']) is bool)
+    require((profile['strategy']=='Rolling' and profile['promotionMode'] is None) or
+            (profile['strategy']=='Canary' and profile['promotionMode'] in ('manual','auto')))
+    require(profile['promotionMode']!='auto' or profile['analysisPluginEnabled'] is True)
+    if 'bootstrapHash' in profile:
+        require(isinstance(profile['bootstrapHash'],str) and re.fullmatch(r'(?:[a-z0-9]{5,16})?',profile['bootstrapHash']))
+    return profile
+
+def patch_runtime_profile(text,repo,commit,result):
+    service,image_repository,_,_=service_contract(repo,result.get('service'))
+    require(service=='backend' and SHA.fullmatch(commit) and
+            result['imageRepository']==image_repository and DIGEST.fullmatch(result['imageDigest']))
+    before=parse_runtime_profile(text)
+    digest=result['imageDigest']
+    updates={'sourceCommit':commit,'image':image_repository+'@'+digest,
+             'imageRevision':'sha256-'+digest[7:][:56]}
+    lines=[]
+    for line in text.splitlines():
+        key=line.split(':',1)[0]
+        lines.append(key+': '+json.dumps(updates[key]) if key in updates else line)
+    after='\n'.join(lines)+'\n'
+    parsed=parse_runtime_profile(after)
+    require(all(parsed[key]==before[key] for key in before if key not in updates) and
+            all(parsed[key]==value for key,value in updates.items()))
+    return after
+
+def proposal_path(service):
+    # Account is the only release profile in the PLAT-201 current root. Order
+    # remains fail-closed until adoption can bind image + Account origin + enable
+    # state in one reviewed change; legacy environments/local is not current.
+    paths={'backend':'learning/account-release/runtime-profile.yaml'}
+    require(service in paths)
+    return paths[service]
 
 def propose():
     repo,commit,run_id,attempt=identity()
     require(os.environ['GITHUB_EVENT_NAME']=='push' and os.environ['GITHUB_REF']=='refs/heads/main' and os.environ['GITHUB_REF_PROTECTED']=='true')
     require(api('/repos/'+repo+'/git/ref/heads/main')['object']['sha']==commit)
     service,_,_,_=service_contract(repo,os.environ.get('RELEASE_SERVICE'))
-    result,urls,record_hash=release_data(repo,commit,run_id,attempt,service)
+    path=proposal_path(service)
+    result,_,_=release_data(repo,commit,run_id,attempt,service)
     owner=repo.split('/')[0];target=owner+'/application-manifest'
     base=api('/repos/'+target+'/git/ref/heads/main')['object']['sha']
     branch=f'github/{service}-{commit}-{run_id}-{attempt}'
-    path='environments/local/'+service+'.yaml'
     file=api('/repos/'+target+'/contents/'+path+'?ref='+base)
     before=base64.b64decode(file['content']).decode()
-    after=patch_values(before,repo,commit,result,urls,record_hash)
+    after=patch_runtime_profile(before,repo,commit,result)
     api('/repos/'+target+'/git/refs','POST',{'ref':'refs/heads/'+branch,'sha':base})
     api('/repos/'+target+'/contents/'+path,'PUT',{'message':f'Update {service} to checked GitHub image {commit}',
         'content':base64.b64encode(after.encode()).decode(),'sha':file['sha'],'branch':branch,
