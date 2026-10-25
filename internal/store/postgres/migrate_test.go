@@ -107,8 +107,30 @@ func TestMigrationIdentityProofPrecedesLockAndDDL(t *testing.T) {
 	if len(fixture.events) != 3 || fixture.events[0] != "read" || !strings.Contains(fixture.events[1], "pg_advisory_lock") || !strings.Contains(fixture.events[2], "CREATE TABLE") {
 		t.Fatalf("migration preparation order = %q", fixture.events)
 	}
-	if !strings.Contains(fixture.events[2], `"account"."schema_migrations"`) {
+	if !strings.Contains(fixture.events[2], `account.schema_migrations`) {
 		t.Fatalf("migration table is not schema-qualified: %q", fixture.events[2])
+	}
+}
+
+func TestMigrationStatementsAreFinite(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		profile *runtimeprofile.Profile
+		create  string
+	}{
+		{"legacy", nil, "schema_migrations"},
+		{"current", &runtimeprofile.Profile{SchemaName: "public"}, "public.schema_migrations"},
+		{"fresh", &runtimeprofile.Profile{SchemaName: "account"}, "account.schema_migrations"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			statements := migrationStatementsFor(test.profile)
+			if !strings.Contains(statements.create, test.create) || statements.exists == "" || statements.insert == "" {
+				t.Fatal("fixed migration statements missing")
+			}
+		})
+	}
+	if statements := migrationStatementsFor(&runtimeprofile.Profile{SchemaName: "other"}); statements != (migrationStatements{}) {
+		t.Fatal("unreviewed migration schema accepted")
 	}
 }
 

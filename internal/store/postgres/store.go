@@ -17,14 +17,41 @@ import (
 )
 
 type Store struct {
-	pool            *pgxpool.Pool
-	observation     *telemetry.Telemetry
-	profile         *runtimeprofile.Profile
-	policy          schemahistory.Policy
-	accountsTable   string
-	migrationsTable string
-	historyTable    string
+	pool         *pgxpool.Pool
+	observation  *telemetry.Telemetry
+	profile      *runtimeprofile.Profile
+	policy       schemahistory.Policy
+	accountSQL   accountStatements
+	historyTable string
 }
+
+type accountStatements struct {
+	list, get, create, update, delete string
+}
+
+var (
+	legacyAccountSQL = accountStatements{
+		list:   `SELECT id,name,email,created_at,updated_at FROM accounts ORDER BY id`,
+		get:    `SELECT id,name,email,created_at,updated_at FROM accounts WHERE id=$1`,
+		create: `INSERT INTO accounts(name,email) VALUES($1,$2) RETURNING id,name,email,created_at,updated_at`,
+		update: `UPDATE accounts SET name=$2,email=$3,updated_at=now() WHERE id=$1 RETURNING id,name,email,created_at,updated_at`,
+		delete: `DELETE FROM accounts WHERE id=$1`,
+	}
+	publicAccountSQL = accountStatements{
+		list:   `SELECT id,name,email,created_at,updated_at FROM public.accounts ORDER BY id`,
+		get:    `SELECT id,name,email,created_at,updated_at FROM public.accounts WHERE id=$1`,
+		create: `INSERT INTO public.accounts(name,email) VALUES($1,$2) RETURNING id,name,email,created_at,updated_at`,
+		update: `UPDATE public.accounts SET name=$2,email=$3,updated_at=now() WHERE id=$1 RETURNING id,name,email,created_at,updated_at`,
+		delete: `DELETE FROM public.accounts WHERE id=$1`,
+	}
+	freshAccountSQL = accountStatements{
+		list:   `SELECT id,name,email,created_at,updated_at FROM account.accounts ORDER BY id`,
+		get:    `SELECT id,name,email,created_at,updated_at FROM account.accounts WHERE id=$1`,
+		create: `INSERT INTO account.accounts(name,email) VALUES($1,$2) RETURNING id,name,email,created_at,updated_at`,
+		update: `UPDATE account.accounts SET name=$2,email=$3,updated_at=now() WHERE id=$1 RETURNING id,name,email,created_at,updated_at`,
+		delete: `DELETE FROM account.accounts WHERE id=$1`,
+	}
+)
 
 var (
 	errParseDatabaseConfiguration = errors.New("parse Account database configuration failed")
@@ -60,6 +87,10 @@ func Open(ctx context.Context, url string, profiles ...*runtimeprofile.Profile) 
 	if err != nil {
 		return nil, errParseDatabaseConfiguration
 	}
+	statements := accountStatementsFor(profile)
+	if statements.list == "" {
+		return nil, errors.New("invalid Account schema profile")
+	}
 	cfg.MinConns = 0
 	cfg.MaxConns = 5
 	cfg.MaxConnLifetime = 30 * time.Minute
@@ -70,12 +101,11 @@ func Open(ctx context.Context, url string, profiles ...*runtimeprofile.Profile) 
 		return nil, errCreateDatabasePool
 	}
 	return &Store{
-		pool:            pool,
-		profile:         profile,
-		policy:          policy,
-		accountsTable:   profileRelation(profile, "accounts"),
-		migrationsTable: profileRelation(profile, "schema_migrations"),
-		historyTable:    profileHistoryTable(profile),
+		pool:         pool,
+		profile:      profile,
+		policy:       policy,
+		accountSQL:   statements,
+		historyTable: profileHistoryTable(profile),
 	}, nil
 }
 
@@ -95,18 +125,25 @@ func profileHistoryTable(profile *runtimeprofile.Profile) string {
 	return profile.SchemaName + ".schema_migrations"
 }
 
-func (s *Store) accountRelation() string {
-	if s.accountsTable != "" {
-		return s.accountsTable
+func accountStatementsFor(profile *runtimeprofile.Profile) accountStatements {
+	if profile == nil {
+		return legacyAccountSQL
 	}
-	return profileRelation(s.profile, "accounts")
+	switch profile.SchemaName {
+	case "public":
+		return publicAccountSQL
+	case "account":
+		return freshAccountSQL
+	default:
+		return accountStatements{}
+	}
 }
 
-func (s *Store) migrationRelation() string {
-	if s.migrationsTable != "" {
-		return s.migrationsTable
+func (s *Store) accountStatements() accountStatements {
+	if s.accountSQL.list != "" {
+		return s.accountSQL
 	}
-	return profileRelation(s.profile, "schema_migrations")
+	return accountStatementsFor(s.profile)
 }
 
 func (s *Store) migrationHistoryTable() string {
@@ -158,7 +195,7 @@ func (s *Store) List(ctx context.Context) (result []account.Account, err error) 
 	defer func() { end(err) }()
 	ctx, cancel := timeout(ctx)
 	defer cancel()
-	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT id,name,email,created_at,updated_at FROM %s ORDER BY id`, s.accountRelation()))
+	rows, err := s.pool.Query(ctx, s.accountStatements().list)
 	if err != nil {
 		return nil, unavailable(err)
 	}
@@ -180,7 +217,7 @@ func (s *Store) Get(ctx context.Context, id int64) (result account.Account, err 
 	defer func() { end(err) }()
 	ctx, cancel := timeout(ctx)
 	defer cancel()
-	return scan(s.pool.QueryRow(ctx, fmt.Sprintf(`SELECT id,name,email,created_at,updated_at FROM %s WHERE id=$1`, s.accountRelation()), id))
+	return scan(s.pool.QueryRow(ctx, s.accountStatements().get, id))
 }
 
 // 単一INSERTはDB側で原子的に実行される。RETURNINGで採番・DB時刻を含む確定結果を返す。
@@ -189,7 +226,7 @@ func (s *Store) Create(ctx context.Context, input account.Input) (result account
 	defer func() { end(err) }()
 	ctx, cancel := timeout(ctx)
 	defer cancel()
-	return scan(s.pool.QueryRow(ctx, fmt.Sprintf(`INSERT INTO %s(name,email) VALUES($1,$2) RETURNING id,name,email,created_at,updated_at`, s.accountRelation()), input.Name, input.Email))
+	return scan(s.pool.QueryRow(ctx, s.accountStatements().create, input.Name, input.Email))
 }
 
 // 更新値もパラメータ化。updated_atはDB時刻へ更新し、対象なしならErrNotFound。
@@ -198,7 +235,7 @@ func (s *Store) Update(ctx context.Context, id int64, input account.Input) (resu
 	defer func() { end(err) }()
 	ctx, cancel := timeout(ctx)
 	defer cancel()
-	return scan(s.pool.QueryRow(ctx, fmt.Sprintf(`UPDATE %s SET name=$2,email=$3,updated_at=now() WHERE id=$1 RETURNING id,name,email,created_at,updated_at`, s.accountRelation()), id, input.Name, input.Email))
+	return scan(s.pool.QueryRow(ctx, s.accountStatements().update, id, input.Name, input.Email))
 }
 
 // 削除件数0はErrNotFound。成功後HTTP層が204を返す。自動再試行は行わない。
@@ -207,7 +244,7 @@ func (s *Store) Delete(ctx context.Context, id int64) (err error) {
 	defer func() { end(err) }()
 	ctx, cancel := timeout(ctx)
 	defer cancel()
-	tag, err := s.pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s WHERE id=$1`, s.accountRelation()), id)
+	tag, err := s.pool.Exec(ctx, s.accountStatements().delete, id)
 	if err != nil {
 		return unavailable(err)
 	}

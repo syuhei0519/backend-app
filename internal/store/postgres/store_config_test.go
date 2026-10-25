@@ -55,6 +55,12 @@ func TestProfileRelationsAndRuntimeReadiness(t *testing.T) {
 	if got := profileHistoryTable(profile); got != "account.schema_migrations" {
 		t.Fatalf("account history = %q", got)
 	}
+	if got := accountStatementsFor(profile); !strings.Contains(got.list, "FROM account.accounts") || got.create == "" || got.update == "" || got.delete == "" {
+		t.Fatal("fresh Account SQL is not fixed")
+	}
+	if got := accountStatementsFor(&runtimeprofile.Profile{SchemaName: "other"}); got != (accountStatements{}) {
+		t.Fatal("unreviewed Account schema accepted")
+	}
 	if err := validateRuntimeIdentity(profile, "account", "account_runtime", "postgres", "account_migrator"); err != nil {
 		t.Fatal(err)
 	}
