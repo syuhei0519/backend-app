@@ -1,3 +1,4 @@
+# 利用側の CI に、この Action と同じ固定版の共有 Go ツールを配置します。
 name: Shared CI tools
 description: Materialize selected Go modules from this fixed Action checkout
 inputs:

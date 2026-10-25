@@ -1,3 +1,4 @@
+// k6 から Account の読み取り API を決めた割合で呼び、成功・入力エラーと待ち時間を計測します。
 import http from 'k6/http';
 import { check } from 'k6';
 import exec from 'k6/execution';

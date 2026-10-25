@@ -1,3 +1,4 @@
+# ソース検査結果を CI の repository・commit・実行回に結び付け、別の結果の流用を防ぎます。
 """Bind the shared source scan to the exact CI source/run/attempt."""
 import importlib.util
 from pathlib import Path

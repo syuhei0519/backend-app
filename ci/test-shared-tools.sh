@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 共有ツールの配置処理が必要な module だけをコピーし、危険な配置先を拒否することを確認します。
 set -euo pipefail
 script=$(cd "$(dirname "$0")" && pwd)/materialize-tools.sh
 work=$(mktemp -d)

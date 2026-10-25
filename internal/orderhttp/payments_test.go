@@ -1,3 +1,4 @@
+// Order から支払いを依頼する API の入力検証と、Payment の結果の返し方を確認します。
 package orderhttp
 
 import (

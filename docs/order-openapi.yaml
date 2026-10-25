@@ -1,3 +1,4 @@
+# Order API の URL・要求・応答を OpenAPI 形式で定義し、実装と利用側の共通契約にします。
 openapi: 3.1.0
 info:
   title: Order API

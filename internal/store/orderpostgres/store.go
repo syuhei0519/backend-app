@@ -1,3 +1,4 @@
+// Order のデータを専用 PostgreSQL に保存・取得し、接続先と DB エラーの扱いを制限します。
 // Package orderpostgres accesses only the orders database as order_app.
 package orderpostgres
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# CI でイメージを組み立て、由来・内容・隔離した起動結果を検査します。
 set -euo pipefail
 umask 077
 case "${RELEASE_SERVICE:-backend}" in

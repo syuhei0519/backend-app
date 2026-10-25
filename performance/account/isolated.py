@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Account の負荷シナリオを使い捨て環境で確かめるため、隔離した試験を組み立てます。
 """Disposable real Account API/Postgres integration; local Docker socket only."""
 import argparse
 import json

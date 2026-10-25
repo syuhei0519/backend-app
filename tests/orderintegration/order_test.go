@@ -1,3 +1,4 @@
+// 使い捨ての DB と Order API をつなぎ、実際の保存・取得と失敗時の応答を確認します。
 // Real HTTP, independent OS processes and fresh PostgreSQL containers only.
 package orderintegration
 

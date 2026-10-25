@@ -1,3 +1,4 @@
+// 隔離起動した API に HTTP で接続し、イメージの起動試験で応答を確認します。
 // Runs the exact validated backend binary without a source database or OTLP.
 package main
 

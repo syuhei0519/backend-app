@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 遅延を再現する試験サーバーと計測の処理を、ローカルで確認します。
 import json
 from pathlib import Path
 import sys

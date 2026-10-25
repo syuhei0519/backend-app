@@ -1,3 +1,4 @@
+// Order の環境変数について、省略時の値と不正な設定の拒否を確認します。
 package orderconfig
 
 import "testing"

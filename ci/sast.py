@@ -1,3 +1,4 @@
+# CI のソースコード検査を実行し、固定ルールと検出結果を検証して成否を決めます。
 """Offline Semgrep CE scan and fail-closed policy evaluation (stdlib only).
 
 Keep this file identical in backend-app and frontend-app until shared-tools has

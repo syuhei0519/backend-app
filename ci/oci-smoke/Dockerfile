@@ -1,3 +1,4 @@
+# 本番用イメージを隔離して起動確認するため、CI 専用の最小テストイメージを作ります。
 FROM golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS probe
 WORKDIR /probe
 COPY probe.go ./

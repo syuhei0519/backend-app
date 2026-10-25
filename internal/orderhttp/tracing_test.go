@@ -1,3 +1,4 @@
+// Order の HTTP 処理と Account 呼び出しが同じトレースで追えることを確認します。
 package orderhttp
 
 import (

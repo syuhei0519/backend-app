@@ -1,3 +1,4 @@
+// 使い捨ての DB と Notification API をつなぎ、実際の保存・取得と失敗時の応答を確認します。
 // One lifecycle in the separately approved dedicated Kubernetes test environment.
 package notificationintegration
 

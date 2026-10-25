@@ -1,3 +1,4 @@
+# 検査ルールの固定、検出結果の集計、違反時の失敗判定を小さな入力で確認します。
 """Policy boundaries plus real, never-executed vulnerability fixtures."""
 import copy
 import datetime as dt

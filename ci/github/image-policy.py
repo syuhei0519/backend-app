@@ -1,3 +1,4 @@
+# 同じ非公開の scan 結果と SBOM を検証し、CI が公開してよいイメージ証跡だけを作ります。
 """Mint image evidence only by evaluating the same private raw scan and SBOM.
 
 This trusted CI step never seals an existing public summary. Raw scanner data

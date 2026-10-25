@@ -1,3 +1,4 @@
+// Order の DB 結合試験で使う、使い捨て環境の準備と片付けをまとめます。
 // Package ordertest is test support for fresh, local-only PostgreSQL containers.
 // It never accepts an operator DSN or reuses an existing container/volume.
 package ordertest

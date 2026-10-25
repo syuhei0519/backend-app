@@ -1,3 +1,4 @@
+// Order サーバーでトレースを初期化し、終了時に送信処理を片付けます。
 // Package ordertrace owns the bounded, optional Order trace exporter.
 package ordertrace
 

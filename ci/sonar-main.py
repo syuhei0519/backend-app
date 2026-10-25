@@ -1,3 +1,4 @@
+# 検証済みの remote main と一致するソースを、承認した共有 SonarQube へ手動送信する入口です。
 """Operator-run Community Build analysis of the exact, clean remote main only.
 
 No server deployment, port-forward, token creation, PR checkout or local runner

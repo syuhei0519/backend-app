@@ -1,3 +1,4 @@
+# 承認した対象に限って小さな Account 読み取り負荷を手動実行し、結果を保存する workflow です。
 name: Account low load (manual)
 on:
   workflow_dispatch:

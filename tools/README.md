@@ -17,3 +17,13 @@ for tool in oci-input release-record scan-gate; do (cd tools/$tool && go test ./
 ```
 
 新しい Action を使う変更は、提供元の変更を先に通常の merge で取り込んでから利用側を取り込む。
+
+## 構成と入口
+
+この階層のディレクトリと役割は次のとおりです。末端のファイルは親の説明から追えます。
+
+| 場所 | 役割 |
+| --- | --- |
+| [oci-input/](oci-input/README.md) | イメージの由来と OCI の archive・manifest・layer を検証する共有 module。 |
+| [release-record/](release-record/README.md) | SBOM とイメージの構成情報を照合する共有 module。 |
+| [scan-gate/](scan-gate/README.md) | 各 repo の方針に従って検出結果や描画 YAML を合否判定する共有 module。 |

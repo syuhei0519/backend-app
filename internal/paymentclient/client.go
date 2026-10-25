@@ -1,3 +1,4 @@
+// Order から Payment に HTTP で依頼し、期限と応答を検証します。不明な結果を自動で再送しません。
 // Package paymentclient implements the bounded Order -> Payment HTTP contract.
 package paymentclient
 

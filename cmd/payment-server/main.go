@@ -1,3 +1,4 @@
+// Payment サーバーの入口です。設定を読み、API 起動と DB migration の実行を切り替えます。
 // payment-server is an independent Payment API or forward-only migration process.
 package main
 

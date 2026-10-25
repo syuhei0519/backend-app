@@ -1,3 +1,4 @@
+# 検査済みの Account・Order イメージと証跡を公開し、その固定 digest を使う配備提案を作ります。
 """GitHub-native publication and data-only manifest verification.
 
 Only GHCR images and GitHub release records are accepted; other registries

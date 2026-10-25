@@ -1,3 +1,4 @@
+// Notification API の入力・応答・稼働確認を、差し替えた保存処理で確認します。
 package notificationhttp
 
 import (

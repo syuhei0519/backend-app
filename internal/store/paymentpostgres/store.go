@@ -1,3 +1,4 @@
+// Payment のデータを専用 PostgreSQL に保存・取得し、接続先と DB エラーの扱いを制限します。
 // Package paymentpostgres accesses only the payments database as payment_app.
 package paymentpostgres
 

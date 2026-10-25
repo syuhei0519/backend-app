@@ -1,3 +1,4 @@
+// Order のデータと業務上の入力条件を定義し、HTTP や DB に依存しない処理をまとめます。
 // Package order defines immutable orders. Creation checks Account existence;
 // stored AccountID is historical and does not prove ownership or authorization.
 package order

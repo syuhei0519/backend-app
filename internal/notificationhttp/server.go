@@ -1,3 +1,4 @@
+// Notification の HTTP 入口です。要求の検証、業務処理の呼び出し、応答と稼働確認を担当します。
 // Package notificationhttp implements the strict Notification wire contract independently of Account.
 package notificationhttp
 

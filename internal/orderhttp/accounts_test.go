@@ -1,3 +1,4 @@
+// Order 作成時の Account 確認について、存在しない場合や通信失敗時の HTTP 応答を確認します。
 package orderhttp
 
 import (

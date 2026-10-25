@@ -1,3 +1,4 @@
+// OCI 検査ツールを API 本体から独立してビルドするための module と依存定義です。
 module github.com/syuhei0519/backend-app/tools/oci-input
 
 go 1.27.0

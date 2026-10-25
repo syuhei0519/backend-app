@@ -1,3 +1,4 @@
+// 採取したトレースが親子関係・サービス名・秘密情報の除外条件を満たすことを確認します。
 package distributedtrace
 
 import (

@@ -1,3 +1,4 @@
+// 隔離した Order と Payment をつなぎ、支払い依頼と重複・失敗時の結果を確認します。
 package orderpaymentintegration
 
 import (

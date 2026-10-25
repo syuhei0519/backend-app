@@ -1,3 +1,4 @@
+// 検査済み OCI を起動試験へ渡せる形式に変換し、設定と layer の対応を維持します。
 // Convert the validated image to Docker transport without changing config/layers.
 package main
 

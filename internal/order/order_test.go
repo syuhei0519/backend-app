@@ -1,3 +1,4 @@
+// Order の入力条件とデータ処理を、DB や HTTP サーバーなしで確認します。
 package order
 
 import (

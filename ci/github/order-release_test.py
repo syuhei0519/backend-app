@@ -1,3 +1,4 @@
+# Order の公開証跡が Account と混ざらず、必須の由来情報を持つことを確認します。
 """Synthetic producer/unchanged pinned M0 consumer interoperability. No network."""
 import copy
 import datetime as dt

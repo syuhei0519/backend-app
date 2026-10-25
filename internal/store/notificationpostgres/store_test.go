@@ -1,3 +1,4 @@
+// Notification の保存先の制限やデータ検証を確認し、別サービスの DB を誤用しないようにします。
 package notificationpostgres
 
 import (

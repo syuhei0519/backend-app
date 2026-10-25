@@ -1,3 +1,4 @@
+// 注文がない場合の拒否や支払い結果の扱いを、実通信を使わずに確認します。
 package orderpayment
 
 import (

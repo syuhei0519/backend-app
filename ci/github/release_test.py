@@ -1,3 +1,4 @@
+# 公開・配備提案で、由来や権限の条件を満たさない入力が拒否されることを確認します。
 import importlib.util
 from pathlib import Path
 import unittest
