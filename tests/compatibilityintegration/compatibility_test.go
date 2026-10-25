@@ -189,6 +189,18 @@ func createdID(t *testing.T, raw []byte) int64 {
 	return value.ID
 }
 
+func requireResource(t *testing.T, raw []byte, id int64, field, value string) {
+	t.Helper()
+	var resource map[string]any
+	if json.Unmarshal(raw, &resource) != nil {
+		t.Fatal("decode compatibility resource")
+	}
+	actualID, ok := resource["id"].(float64)
+	if !ok || int64(actualID) != id || resource[field] != value {
+		t.Fatalf("compatibility resource id=%v %s=%v", resource["id"], field, resource[field])
+	}
+}
+
 func TestPreparedBinaryRollbackWindow(t *testing.T) {
 	if os.Getenv("COMPAT_C1_WRITER_HELPER") == "1" {
 		helperWriter(t)
@@ -276,24 +288,35 @@ func TestPreparedBinaryRollbackWindow(t *testing.T) {
 	order = start(t, ctx, services[1], prepared, account.base, http.StatusOK)
 	payment = start(t, ctx, services[2], prepared, "", http.StatusOK)
 	notification = start(t, ctx, services[3], prepared, "", http.StatusOK)
-	old := []struct{ base, path string }{
-		{account.base, "/api/accounts/" + strconv.FormatInt(accountID, 10)},
-		{order.base, "/api/orders/" + strconv.FormatInt(orderID, 10)},
-		{payment.base, "/api/payments/" + strconv.FormatInt(paymentID, 10)},
-		{notification.base, "/api/notifications/" + strconv.FormatInt(notificationID, 10)},
+	old := []struct {
+		base, path, field, value string
+		id                       int64
+	}{
+		{account.base, "/api/accounts/" + strconv.FormatInt(accountID, 10), "name", "Prepared", accountID},
+		{order.base, "/api/orders/" + strconv.FormatInt(orderID, 10), "item_code", "PREPARED", orderID},
+		{payment.base, "/api/payments/" + strconv.FormatInt(paymentID, 10), "currency", "JPY", paymentID},
+		{notification.base, "/api/notifications/" + strconv.FormatInt(notificationID, 10), "recipient", "compat-user", notificationID},
 	}
 	for _, item := range old {
-		call(t, "GET", item.base+item.path, "", http.StatusOK)
+		requireResource(t, call(t, "GET", item.base+item.path, "", http.StatusOK), item.id, item.field, item.value)
 	}
+	crudAccountID := createdID(t, call(t, "POST", account.base+"/api/accounts", `{"name":"Prepared CRUD","email":"prepared-crud@example.invalid"}`, http.StatusCreated))
+	requireResource(t, call(t, "PUT", account.base+"/api/accounts/"+strconv.FormatInt(crudAccountID, 10), `{"name":"Prepared updated","email":"prepared-updated@example.invalid"}`, http.StatusOK), crudAccountID, "name", "Prepared updated")
+	requireResource(t, call(t, "GET", account.base+"/api/accounts/"+strconv.FormatInt(crudAccountID, 10), "", http.StatusOK), crudAccountID, "email", "prepared-updated@example.invalid")
+	call(t, "DELETE", account.base+"/api/accounts/"+strconv.FormatInt(crudAccountID, 10), "", http.StatusNoContent)
+	call(t, "GET", account.base+"/api/accounts/"+strconv.FormatInt(crudAccountID, 10), "", http.StatusNotFound)
 	preparedAccountID := createdID(t, call(t, "POST", account.base+"/api/accounts", `{"name":"Prepared mixed","email":"prepared-mixed@example.invalid"}`, http.StatusCreated))
 	preparedOrderID := createdID(t, call(t, "POST", order.base+"/api/orders", fmt.Sprintf(`{"account_id":%d,"item_code":"PREPARED-MIXED","quantity":1}`, preparedAccountID), http.StatusCreated))
 	preparedPaymentID := createdID(t, call(t, "POST", payment.base+"/api/payments", fmt.Sprintf(`{"request_id":"550e8400-e29b-41d4-a716-446655440005","order_id":%d,"amount_minor":1100,"currency":"JPY","simulate_result":"success"}`, preparedOrderID), http.StatusCreated))
 	preparedNotificationID := createdID(t, call(t, "POST", notification.base+"/api/notifications", fmt.Sprintf(`{"request_id":"550e8400-e29b-41d4-a716-446655440006","order_id":%d,"recipient":"compat-mixed","message":"prepared mixed notification","simulate_result":"success"}`, preparedOrderID), http.StatusCreated))
-	preparedRows := []struct{ base, path string }{
-		{account.base, "/api/accounts/" + strconv.FormatInt(preparedAccountID, 10)},
-		{order.base, "/api/orders/" + strconv.FormatInt(preparedOrderID, 10)},
-		{payment.base, "/api/payments/" + strconv.FormatInt(preparedPaymentID, 10)},
-		{notification.base, "/api/notifications/" + strconv.FormatInt(preparedNotificationID, 10)},
+	preparedRows := []struct {
+		base, path, field, value string
+		id                       int64
+	}{
+		{account.base, "/api/accounts/" + strconv.FormatInt(preparedAccountID, 10), "name", "Prepared mixed", preparedAccountID},
+		{order.base, "/api/orders/" + strconv.FormatInt(preparedOrderID, 10), "item_code", "PREPARED-MIXED", preparedOrderID},
+		{payment.base, "/api/payments/" + strconv.FormatInt(preparedPaymentID, 10), "currency", "JPY", preparedPaymentID},
+		{notification.base, "/api/notifications/" + strconv.FormatInt(preparedNotificationID, 10), "recipient", "compat-mixed", preparedNotificationID},
 	}
 
 	resultPath := filepath.Join(tmp, "c1-result.json")
@@ -310,17 +333,20 @@ func TestPreparedBinaryRollbackWindow(t *testing.T) {
 	if err != nil || json.Unmarshal(raw, &ids) != nil {
 		t.Fatal("read C1 writer evidence")
 	}
-	newRows := []struct{ base, path string }{
-		{account.base, "/api/accounts/" + strconv.FormatInt(ids.Account, 10)},
-		{order.base, "/api/orders/" + strconv.FormatInt(ids.Order, 10)},
-		{payment.base, "/api/payments/" + strconv.FormatInt(ids.Payment, 10)},
-		{notification.base, "/api/notifications/" + strconv.FormatInt(ids.Notification, 10)},
+	newRows := []struct {
+		base, path, field, value string
+		id                       int64
+	}{
+		{account.base, "/api/accounts/" + strconv.FormatInt(ids.Account, 10), "name", "C1 dual", ids.Account},
+		{order.base, "/api/orders/" + strconv.FormatInt(ids.Order, 10), "item_code", "C1-ORDER", ids.Order},
+		{payment.base, "/api/payments/" + strconv.FormatInt(ids.Payment, 10), "currency", "JPY", ids.Payment},
+		{notification.base, "/api/notifications/" + strconv.FormatInt(ids.Notification, 10), "recipient", "compat-user", ids.Notification},
 	}
 	for _, item := range newRows {
-		call(t, "GET", item.base+item.path, "", http.StatusOK)
+		requireResource(t, call(t, "GET", item.base+item.path, "", http.StatusOK), item.id, item.field, item.value)
 	}
 	for _, item := range preparedRows {
-		call(t, "GET", item.base+item.path, "", http.StatusOK)
+		requireResource(t, call(t, "GET", item.base+item.path, "", http.StatusOK), item.id, item.field, item.value)
 	}
 	for _, p := range []*process{notification, payment, order, account} {
 		stop(t, p)
@@ -331,11 +357,11 @@ func TestPreparedBinaryRollbackWindow(t *testing.T) {
 	notification = start(t, ctx, services[3], prepared, "", http.StatusOK)
 	for index, item := range newRows {
 		bases := []string{account.base, order.base, payment.base, notification.base}
-		call(t, "GET", bases[index]+item.path, "", http.StatusOK)
+		requireResource(t, call(t, "GET", bases[index]+item.path, "", http.StatusOK), item.id, item.field, item.value)
 	}
 	for index, item := range preparedRows {
 		bases := []string{account.base, order.base, payment.base, notification.base}
-		call(t, "GET", bases[index]+item.path, "", http.StatusOK)
+		requireResource(t, call(t, "GET", bases[index]+item.path, "", http.StatusOK), item.id, item.field, item.value)
 	}
 	for _, p := range []*process{notification, payment, order, account} {
 		stop(t, p)
