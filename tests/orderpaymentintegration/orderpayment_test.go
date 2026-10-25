@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,7 +38,11 @@ func port(t *testing.T) string {
 }
 func build(t *testing.T, service string) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), service)
+	name := service
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	p := filepath.Join(t.TempDir(), name)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", "build", "-o", p, "./cmd/"+service+"-server")
