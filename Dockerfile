@@ -2,7 +2,7 @@
 # CIのBuildKitが読む複数段ビルド定義。ソースと固定依存から実行用イメージを作る。
 # 入口はci/github/oci.sh、成果物のdigest検査はtools/oci-input/layout.go。
 # VCS_REF/VCS_SOURCEをOCIラベルへ結び、build用依存を最終runtimeへそのまま持ち込まない。
-FROM golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS build
+FROM golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 # Optional build-only trust; never copy the bundle or persist its path with ENV.

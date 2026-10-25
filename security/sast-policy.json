@@ -9,7 +9,7 @@
     "dangerous-exec-command": {
       "mode": "observe",
       "owner": "syuhei0519",
-      "reason": "Eleven independently verified test-harness false positives; keep all audit results visible. Precise dynamic shell and SQL rules enforce. Review at most fourteen days.",
+      "reason": "Twenty independently verified test-harness false positives; keep all audit results visible. Precise dynamic shell and SQL rules enforce. Review at most fourteen days.",
       "createdAt": "2026-10-24T00:00:00Z",
       "expiresAt": "2026-11-07T00:00:00Z"
     },

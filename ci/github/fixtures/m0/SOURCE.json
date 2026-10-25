@@ -10,7 +10,7 @@
     "fixtures/order-record.json": "a3a2b0472fe51d96614406d85fd89748eb8c255c45ebbfd21cfdde57e0968eb5",
     "fixtures/sbom.cdx.json": "b9104ba1eba76b6b080694eb4eb1717e38d5d9b7dbe4469e50acbfd756c5ca56",
     "order-release.schema.json": "2bdc572d5e2ac6f694a1658b27d36ead6abdb44bcfb9eb284b47f74979468f92",
-    "release.py": "ed2630b8b3fe3a18a6de2c0ce55dcbe494f7d20414d672326d7e524b30903867",
+    "release.py": "9cfe24858fa43c70cad7dee63fb08ce06fdc27c0895cd9e47ba3ed6156894c9d",
     "release_test.py": "c23078874ec77fb06a54525a4cb4f2a702a7758fe833f396174fc53fd77a4d86"
   }
 }
