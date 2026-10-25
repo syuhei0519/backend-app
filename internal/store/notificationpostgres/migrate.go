@@ -6,6 +6,7 @@ import (
 	"context"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/syuhei0519/backend-app/internal/notification"
+	"github.com/syuhei0519/backend-app/internal/schemahistory"
 	"github.com/syuhei0519/backend-app/internal/store/dbwait"
 	migrations "github.com/syuhei0519/backend-app/notification-migrations"
 	"io/fs"
@@ -59,12 +60,12 @@ func (s *Store) Migrate(parent context.Context) error {
 	if _, err = conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS public.notification_schema_migrations(version INTEGER PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
-	var maximum int
-	if err = conn.QueryRow(ctx, `SELECT COALESCE(MAX(version),0) FROM public.notification_schema_migrations`).Scan(&maximum); err != nil {
-		return err
-	}
-	if maximum > 1 {
+	state := schemahistory.Inspect(ctx, conn, "public.notification_schema_migrations")
+	if !schemahistory.C0MigrationAllowed(state) {
 		return notification.ErrUnavailable
+	}
+	if state == schemahistory.C0 {
+		return nil
 	}
 	entries, err := fs.ReadDir(migrations.Files, ".")
 	if err != nil {
@@ -95,6 +96,9 @@ func (s *Store) Migrate(parent context.Context) error {
 		if err = applyMigration(ctx, conn, version, string(script)); err != nil {
 			return err
 		}
+	}
+	if !schemahistory.C0Ready(schemahistory.Inspect(ctx, conn, "public.notification_schema_migrations")) {
+		return notification.ErrUnavailable
 	}
 	return nil
 }

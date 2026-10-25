@@ -9,13 +9,14 @@ import (
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/syuhei0519/backend-app/internal/notification"
-	"github.com/syuhei0519/backend-app/internal/notificationtest"
+	notificationtest "github.com/syuhei0519/backend-app/internal/notificationdockertest"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -33,7 +34,11 @@ func TestOwnedLifecycle(t *testing.T) {
 		t.Fatal("fixture pool")
 	}
 	defer pool.Close()
-	binary := filepath.Join(t.TempDir(), "notification-server")
+	name := "notification-server"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	binary := filepath.Join(t.TempDir(), name)
 	if exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd/notification-server").Run() != nil {
 		t.Fatal("build API process")
 	}
@@ -129,6 +134,12 @@ func TestOwnedLifecycle(t *testing.T) {
 	}
 	stop := func(p *process) {
 		t.Helper()
+		if runtime.GOOS == "windows" {
+			_ = p.cmd.Process.Kill()
+			<-p.done
+			p.stopped = true
+			return
+		}
 		if p.cmd.Process.Signal(syscall.SIGTERM) != nil {
 			t.Fatal("signal API")
 		}

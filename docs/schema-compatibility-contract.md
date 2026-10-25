@@ -37,3 +37,20 @@ observed histories fail closed. No version 2 production DDL is part of C0.
 The four-service disposable DB gate must exercise the same classification and
 failure behavior before any version 2 SQL is introduced. A skipped suite, an
 unavailable DB, an integrity failure, or an assertion failure is a failed gate.
+
+## Test-only E1 evidence is not a production migration
+
+The Account compatibility fixture may add a nullable `name_e1` column and the
+history row `{1,2}` only inside its fresh disposable PostgreSQL container. It
+must prove these four real-DB cells: C0 schema/C0 writer, C0 schema/C1 writer
+zero-write rejection, E1 schema/C0 writer with C1 fallback read, and E1
+schema/C1 dual writer with the fixed C0 SQL data reader. It also covers old-only,
+dual-written, and divergent rows; mixed create/update/delete and uniqueness;
+transactional backfill failure, restart, and idempotent rerun.
+
+The C0 process remains deliberately **not Ready** for `{1,2}`, and its migration
+entry point rejects that history. A successful fixed C0 SQL read after a C1
+dual-write is data-path compatibility evidence only; it is not evidence that a
+C0 workload can be rolled back operationally. A future C1 runtime/profile must
+define and test that readiness window before any version 2 production DDL is
+added.

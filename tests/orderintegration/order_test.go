@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -105,7 +106,11 @@ func TestDisposableHTTPPersistenceAndAccount(t *testing.T) {
 	call("POST", accountHTTP.URL+"/api/accounts", `{"name":"Duplicate","email":"after@example.invalid"}`, "application/json", 409)
 	call("POST", accountHTTP.URL+"/api/accounts", `{"name":"","email":"invalid"}`, "application/json", 400)
 	call("GET", accountHTTP.URL+"/api/accounts/9223372036854775807", "", "", 404)
-	binary := filepath.Join(t.TempDir(), "order-server")
+	name := "order-server"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	binary := filepath.Join(t.TempDir(), name)
 	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd/order-server")
 	if build.Run() != nil {
 		t.Fatal("build Order process failed")
@@ -169,6 +174,12 @@ func TestDisposableHTTPPersistenceAndAccount(t *testing.T) {
 	}
 	stop := func(p *process) {
 		t.Helper()
+		if runtime.GOOS == "windows" {
+			_ = p.cmd.Process.Kill()
+			<-p.done
+			p.stopped = true
+			return
+		}
 		if p.cmd.Process.Signal(syscall.SIGTERM) != nil {
 			t.Fatal("signal Order process")
 		}

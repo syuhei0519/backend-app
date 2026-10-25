@@ -7,7 +7,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/syuhei0519/backend-app/internal/account"
 	"github.com/syuhei0519/backend-app/internal/runtimeprofile"
+	"github.com/syuhei0519/backend-app/internal/schemahistory"
 	"github.com/syuhei0519/backend-app/internal/store/dbwait"
 	"github.com/syuhei0519/backend-app/migrations"
 	"io/fs"
@@ -79,6 +81,13 @@ func (s *Store) Migrate(parent context.Context) error {
 	if locked, err = prepareMigration(ctx, conn, s.profile); err != nil {
 		return err
 	}
+	state := schemahistory.Inspect(ctx, conn, "public.schema_migrations")
+	if !schemahistory.C0MigrationAllowed(state) {
+		return account.ErrUnavailable
+	}
+	if state == schemahistory.C0 {
+		return nil
+	}
 	entries, err := fs.ReadDir(migrations.Files, ".")
 	if err != nil {
 		return err
@@ -108,6 +117,9 @@ func (s *Store) Migrate(parent context.Context) error {
 		if err = applyMigration(ctx, conn, version, string(script)); err != nil {
 			return err
 		}
+	}
+	if !schemahistory.C0Ready(schemahistory.Inspect(ctx, conn, "public.schema_migrations")) {
+		return account.ErrUnavailable
 	}
 	return nil
 }
