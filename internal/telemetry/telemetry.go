@@ -67,17 +67,19 @@ func validateDestination(endpoint, namespace, environment, version string) error
 	if err != nil || u.Scheme != "http" || u.Opaque != "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return fmt.Errorf("invalid Collector endpoint")
 	}
-	expectedNamespace := "account"
+	validNamespace := namespace == "account"
 	switch u.Host {
 	case "otel-collector.observability.svc.cluster.local:4318":
+		// accountはno-profile移行中だけの旧入力。明示current profileは実namespaceを使う。
+		validNamespace = namespace == "account" || namespace == "learning-services-20261018"
 	case "account-release-otel-collector.observability.svc.cluster.local:4318":
-		expectedNamespace = "learning-account-release"
+		validNamespace = namespace == "learning-account-release"
 	default:
 		if u.Hostname() != "localhost" && u.Hostname() != "127.0.0.1" {
 			return fmt.Errorf("invalid Collector endpoint")
 		}
 	}
-	if !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(version) || namespace != expectedNamespace || environment != "local" {
+	if !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(version) || !validNamespace || environment != "local" {
 		return fmt.Errorf("invalid deployment telemetry identity")
 	}
 	return nil

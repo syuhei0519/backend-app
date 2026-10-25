@@ -21,6 +21,11 @@ type Store struct {
 	profile     *runtimeprofile.Profile
 }
 
+var (
+	errParseDatabaseConfiguration = errors.New("parse Account database configuration failed")
+	errCreateDatabasePool         = errors.New("create Account database pool failed")
+)
+
 func (s *Store) SetTelemetry(t *telemetry.Telemetry) { s.observation = t }
 
 // HTTPから受け取ったcontextをDB spanへ引き継ぐ。計装なしなら何もしない終了関数を返す。
@@ -43,7 +48,7 @@ func Open(ctx context.Context, url string, profiles ...*runtimeprofile.Profile) 
 	}
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		return nil, fmt.Errorf("parse database URL: %w", err)
+		return nil, errParseDatabaseConfiguration
 	}
 	cfg.MinConns = 0
 	cfg.MaxConns = 5
@@ -52,7 +57,7 @@ func Open(ctx context.Context, url string, profiles ...*runtimeprofile.Profile) 
 	cfg.ConnConfig.ConnectTimeout = 3 * time.Second
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("create pool: %w", err)
+		return nil, errCreateDatabasePool
 	}
 	return &Store{pool: pool, profile: profile}, nil
 }

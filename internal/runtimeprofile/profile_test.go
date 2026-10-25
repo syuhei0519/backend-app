@@ -32,7 +32,7 @@ func setProfile(t *testing.T, profile Profile) {
 }
 
 func TestFiniteProfilesLoad(t *testing.T) {
-	for _, name := range []string{ExistingKindAccount, LearningAccountRelease} {
+	for _, name := range []string{CurrentExistingKindAccount, FreshLearningAccountRelease} {
 		t.Run(name, func(t *testing.T) {
 			clearProfileEnvironment(t)
 			setProfile(t, profiles[name])
@@ -79,7 +79,7 @@ func TestProfileInputsFailClosedWithoutLeakingValues(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			clearProfileEnvironment(t)
-			setProfile(t, profiles[ExistingKindAccount])
+			setProfile(t, profiles[CurrentExistingKindAccount])
 			t.Setenv("PGPASSWORD", secret)
 			test.edit(t)
 			_, err := Load()
@@ -93,8 +93,32 @@ func TestProfileInputsFailClosedWithoutLeakingValues(t *testing.T) {
 	}
 }
 
+func TestAllUnreviewedDriverSettingsFailClosed(t *testing.T) {
+	secret := "private-driver-canary"
+	for _, key := range []string{
+		"PGPASSFILE", "PGAPPNAME", "PGCONNECT_TIMEOUT", "PGSSLCERT", "PGSSLKEY",
+		"PGSSLSNI", "PGSSLROOTCERT", "PGSSLPASSWORD", "PGSSLNEGOTIATION",
+		"PGTARGETSESSIONATTRS", "PGSERVICE", "PGSERVICEFILE", "PGTZ", "PGOPTIONS",
+		"PGMINPROTOCOLVERSION", "PGMAXPROTOCOLVERSION", "PGCHANNELBINDING", "PGREQUIREAUTH",
+		"PG_FUTURE_DRIVER_SETTING",
+	} {
+		t.Run(key, func(t *testing.T) {
+			clearProfileEnvironment(t)
+			setProfile(t, profiles[CurrentExistingKindAccount])
+			t.Setenv(key, secret)
+			_, err := Load()
+			if err == nil {
+				t.Fatal("unreviewed driver setting accepted")
+			}
+			if strings.Contains(err.Error(), secret) {
+				t.Fatal("driver setting value leaked")
+			}
+		})
+	}
+}
+
 func TestDatabaseIdentityUsesActualValues(t *testing.T) {
-	profile := profiles[ExistingKindAccount]
+	profile := profiles[CurrentExistingKindAccount]
 	if err := profile.ValidateDatabaseIdentity("account", "account_app", "account_app"); err != nil {
 		t.Fatal(err)
 	}

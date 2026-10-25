@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	ExistingKindAccount    = "existing-kind-account"
-	LearningAccountRelease = "learning-account-release"
+	CurrentExistingKindAccount  = "current-existing-kind-account"
+	FreshLearningAccountRelease = "fresh-learning-account-release"
 )
 
 var errInvalid = errors.New("invalid Account runtime profile")
@@ -30,18 +30,18 @@ type Profile struct {
 }
 
 var profiles = map[string]Profile{
-	ExistingKindAccount: {
-		Name:              ExistingKindAccount,
-		DatabaseHost:      "postgresql",
+	CurrentExistingKindAccount: {
+		Name:              CurrentExistingKindAccount,
+		DatabaseHost:      "learning-account-db",
 		DatabaseName:      "account",
 		DatabaseRole:      "account_app",
 		DatabaseOwner:     "account_app",
-		Namespace:         "account",
+		Namespace:         "learning-services-20261018",
 		CollectorEndpoint: "http://otel-collector.observability.svc.cluster.local:4318",
 		Environment:       "local",
 	},
-	LearningAccountRelease: {
-		Name:              LearningAccountRelease,
+	FreshLearningAccountRelease: {
+		Name:              FreshLearningAccountRelease,
 		DatabaseHost:      "learning-account-db",
 		DatabaseName:      "account",
 		DatabaseRole:      "account_app",
@@ -84,13 +84,16 @@ func Load() (*Profile, error) {
 	if os.Getenv("PGPASSWORD") == "" || os.Getenv("POD_UID") == "" || os.Getenv("DATABASE_URL") != "" {
 		return nil, errInvalid
 	}
-	for _, key := range []string{
-		"PGSERVICE", "PGSERVICEFILE", "PGPASSFILE", "PGOPTIONS", "PGAPPNAME",
-		"PGTARGETSESSIONATTRS", "PGCHANNELBINDING", "PGREQUIRESSL", "PGCONNECT_TIMEOUT",
-		"PGKRBSRVNAME", "PGGSSLIB", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY", "PGSSLCRL",
-	} {
-		if os.Getenv(key) != "" {
-			return nil, errInvalid
+	allowedDriverSettings := map[string]struct{}{
+		"PGHOST": {}, "PGPORT": {}, "PGDATABASE": {},
+		"PGUSER": {}, "PGPASSWORD": {}, "PGSSLMODE": {},
+	}
+	for _, entry := range os.Environ() {
+		key, value, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(key, "PG") && value != "" {
+			if _, ok := allowedDriverSettings[key]; !ok {
+				return nil, errInvalid
+			}
 		}
 	}
 	return &profile, nil

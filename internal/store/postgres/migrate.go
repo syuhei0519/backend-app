@@ -4,7 +4,10 @@ package postgres
 
 import (
 	"context"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/syuhei0519/backend-app/internal/runtimeprofile"
 	"github.com/syuhei0519/backend-app/internal/store/dbwait"
 	"github.com/syuhei0519/backend-app/migrations"
 	"io/fs"
@@ -16,6 +19,32 @@ import (
 
 // 同じDB内で協調する移行プロセスが共通に使うロック番号。SQLを直接実行する第三者までは排除しない。
 const lockID int64 = 7742340081
+
+type migrationPreparationConn interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+// 最初のadvisory lock・DDLより前に実DB identityを照合する。この読取に履歴tableは不要。
+func prepareMigration(ctx context.Context, conn migrationPreparationConn, profile *runtimeprofile.Profile) (bool, error) {
+	if profile != nil {
+		var database, role, owner string
+		err := conn.QueryRow(ctx, `SELECT current_database(),current_user,pg_get_userbyid(d.datdba) FROM pg_database AS d WHERE d.datname=current_database()`).Scan(&database, &role, &owner)
+		if err != nil {
+			return false, err
+		}
+		if err := profile.ValidateDatabaseIdentity(database, role, owner); err != nil {
+			return false, err
+		}
+	}
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
+		return false, err
+	}
+	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
+		return true, err
+	}
+	return true, nil
+}
 
 // 待機・ロック・SQL適用を同じ親期限の下で行い、最初の失敗を返す。
 // 各SQLファイル単位でcommitするため、後続ファイル失敗でも前のファイルの成功は残る。
@@ -47,11 +76,7 @@ func (s *Store) Migrate(parent context.Context) error {
 	}()
 	// 他の移行がロックを持つ間は待機するが、170秒の全体期限で打ち切る。
 	// ロック後に履歴を見ることで「未適用と判断した2プロセスが同時適用する」競合を防ぐ。
-	if _, err = conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
-		return err
-	}
-	locked = true
-	if _, err = conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
+	if locked, err = prepareMigration(ctx, conn, s.profile); err != nil {
 		return err
 	}
 	entries, err := fs.ReadDir(migrations.Files, ".")
