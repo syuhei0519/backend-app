@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/syuhei0519/backend-app/internal/account"
+	"github.com/syuhei0519/backend-app/internal/runtimeprofile"
 	"github.com/syuhei0519/backend-app/internal/telemetry"
 	"time"
 )
@@ -17,7 +18,13 @@ import (
 type Store struct {
 	pool        *pgxpool.Pool
 	observation *telemetry.Telemetry
+	profile     *runtimeprofile.Profile
 }
+
+var (
+	errParseDatabaseConfiguration = errors.New("parse Account database configuration failed")
+	errCreateDatabasePool         = errors.New("create Account database pool failed")
+)
 
 func (s *Store) SetTelemetry(t *telemetry.Telemetry) { s.observation = t }
 
@@ -31,10 +38,17 @@ func (s *Store) observe(ctx context.Context, operation string) (context.Context,
 
 // poolを構成する。MinConns=0なので起動時点でDBが利用可能とは保証しない。
 // MaxConns=5、寿命30分、idle5分、接続3秒は現行上限。具体的な性能根拠は資料にない。
-func Open(ctx context.Context, url string) (*Store, error) {
+func Open(ctx context.Context, url string, profiles ...*runtimeprofile.Profile) (*Store, error) {
+	if len(profiles) > 1 {
+		return nil, errors.New("multiple Account runtime profiles")
+	}
+	var profile *runtimeprofile.Profile
+	if len(profiles) == 1 {
+		profile = profiles[0]
+	}
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		return nil, fmt.Errorf("parse database URL: %w", err)
+		return nil, errParseDatabaseConfiguration
 	}
 	cfg.MinConns = 0
 	cfg.MaxConns = 5
@@ -43,9 +57,9 @@ func Open(ctx context.Context, url string) (*Store, error) {
 	cfg.ConnConfig.ConnectTimeout = 3 * time.Second
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("create pool: %w", err)
+		return nil, errCreateDatabasePool
 	}
-	return &Store{pool: pool}, nil
+	return &Store{pool: pool, profile: profile}, nil
 }
 
 // 通常のプロセス終了でpoolを閉じる。借用中の接続の返却を待つ。
@@ -55,6 +69,21 @@ func (s *Store) Close() { s.pool.Close() }
 func (s *Store) Ready(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
+	if s.profile != nil {
+		var database, role, owner string
+		var version int
+		err := s.pool.QueryRow(ctx, `SELECT current_database(),current_user,pg_get_userbyid(d.datdba),COALESCE((SELECT MAX(version) FROM schema_migrations),0) FROM pg_database AS d WHERE d.datname=current_database()`).Scan(&database, &role, &owner, &version)
+		if err != nil {
+			return err
+		}
+		if err := s.profile.ValidateDatabaseIdentity(database, role, owner); err != nil {
+			return err
+		}
+		if version != 1 {
+			return fmt.Errorf("incompatible schema version: %d", version)
+		}
+		return nil
+	}
 	var version int
 	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&version); err != nil {
 		return err

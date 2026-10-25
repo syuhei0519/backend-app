@@ -44,7 +44,7 @@ func main() {
 	}
 	logger = newLogger(os.Stdout, cfg.LogLevel)
 	logger.Debug("debug logging enabled")
-	store, err := postgres.Open(context.Background(), cfg.DatabaseURL)
+	store, err := postgres.Open(context.Background(), cfg.DatabaseURL, cfg.Profile)
 	if err != nil {
 		logger.Error("initialize database pool", "error", err)
 		os.Exit(1)
