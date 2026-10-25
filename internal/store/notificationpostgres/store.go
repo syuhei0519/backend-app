@@ -18,9 +18,16 @@ import (
 
 var ErrTarget = errors.New("Notification database target rejected")
 
-type Store struct{ pool *pgxpool.Pool }
+type Store struct {
+	pool   *pgxpool.Pool
+	policy schemahistory.Policy
+}
 
 func Open(ctx context.Context, url string) (*Store, error) {
+	policy, err := schemahistory.LoadPolicy()
+	if err != nil {
+		return nil, notification.ErrInternal
+	}
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, notification.ErrInternal
@@ -41,7 +48,7 @@ func Open(ctx context.Context, url string) (*Store, error) {
 	if err != nil {
 		return nil, notification.ErrInternal
 	}
-	return &Store{pool: pool}, nil
+	return &Store{pool: pool, policy: policy}, nil
 }
 
 type rowQuery interface {
@@ -67,7 +74,7 @@ func (s *Store) CheckTarget(ctx context.Context) error {
 func (s *Store) Ready(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	if !schemahistory.C0Ready(schemahistory.Inspect(ctx, s.pool, "public.notification_schema_migrations")) {
+	if !s.policy.Ready(schemahistory.Inspect(ctx, s.pool, "public.notification_schema_migrations")) {
 		return notification.ErrUnavailable
 	}
 	return nil

@@ -20,11 +20,13 @@ type Store struct {
 	pool        *pgxpool.Pool
 	observation *telemetry.Telemetry
 	profile     *runtimeprofile.Profile
+	policy      schemahistory.Policy
 }
 
 var (
 	errParseDatabaseConfiguration = errors.New("parse Account database configuration failed")
 	errCreateDatabasePool         = errors.New("create Account database pool failed")
+	errSchemaCompatibilityProfile = errors.New("invalid Account schema compatibility profile")
 )
 
 func (s *Store) SetTelemetry(t *telemetry.Telemetry) { s.observation = t }
@@ -47,6 +49,10 @@ func Open(ctx context.Context, url string, profiles ...*runtimeprofile.Profile) 
 	if len(profiles) == 1 {
 		profile = profiles[0]
 	}
+	policy, err := schemahistory.LoadPolicy()
+	if err != nil {
+		return nil, errSchemaCompatibilityProfile
+	}
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, errParseDatabaseConfiguration
@@ -60,7 +66,7 @@ func Open(ctx context.Context, url string, profiles ...*runtimeprofile.Profile) 
 	if err != nil {
 		return nil, errCreateDatabasePool
 	}
-	return &Store{pool: pool, profile: profile}, nil
+	return &Store{pool: pool, profile: profile, policy: policy}, nil
 }
 
 // 通常のプロセス終了でpoolを閉じる。借用中の接続の返却を待つ。
@@ -80,7 +86,7 @@ func (s *Store) Ready(ctx context.Context) error {
 			return err
 		}
 	}
-	if !schemahistory.C0Ready(schemahistory.Inspect(ctx, s.pool, "public.schema_migrations")) {
+	if !s.policy.Ready(schemahistory.Inspect(ctx, s.pool, "public.schema_migrations")) {
 		return account.ErrUnavailable
 	}
 	return nil

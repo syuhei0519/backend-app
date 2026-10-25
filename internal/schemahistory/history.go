@@ -5,10 +5,39 @@ package schemahistory
 
 import (
 	"context"
+	"errors"
+	"os"
 	"sort"
 
 	"github.com/jackc/pgx/v5"
 )
+
+type Policy string
+
+const (
+	StrictC0     Policy = ""
+	PreparedV1V2 Policy = "prepared-v1-v2"
+)
+
+var ErrInvalidPolicy = errors.New("invalid schema compatibility profile")
+
+// LoadPolicy exposes one finite rollback window. Empty remains the production
+// C0 contract; the prepared profile may read/write the unchanged C0 columns
+// while schema histories {1} and {1,2} have both been tested.
+func LoadPolicy() (Policy, error) {
+	policy := Policy(os.Getenv("SCHEMA_COMPATIBILITY_PROFILE"))
+	if policy != StrictC0 && policy != PreparedV1V2 {
+		return StrictC0, ErrInvalidPolicy
+	}
+	return policy, nil
+}
+
+func (p Policy) Ready(state State) bool {
+	if p == PreparedV1V2 {
+		return state == C0 || state == Expand
+	}
+	return state == C0
+}
 
 type State string
 

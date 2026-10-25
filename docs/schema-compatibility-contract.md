@@ -2,35 +2,41 @@
 
 This contract applies independently to Account, Order, Payment, and Notification.
 The current runtime is compatibility generation C0 and supports exactly migration
-history `{1}`. Readiness and migration use the same finite classifier:
+history `{1}`. The empty `SCHEMA_COMPATIBILITY_PROFILE` is strict C0. The only
+other accepted value, `prepared-v1-v2`, identifies a compatibility-prepared
+binary whose unchanged C0 columns have been tested against `{1}` and `{1,2}`.
+Unknown profile names fail before a database pool is returned.
 
-| Observed history | Classification | C0 Ready | C0 migration |
-| --- | --- | --- | --- |
-| database unavailable/read failure | `unavailable` | no | no |
-| history table absent | `no-table` | no | create the table, then treat as empty |
-| `{}` | `empty` | no | apply migration 1 |
-| `{1}` | `c0-v1` | yes | safe idempotent no-op |
-| `{1,2}` | `expand-v1-v2` | no | no; requires the tested C1 binary |
-| `{2}` | `missing-base-v2` | no | no |
-| `{1,3}` or any non-contiguous/duplicate history | `gap` | no | no |
-| contiguous history beyond prepared version 2 | `unknown-future` | no | no |
+| Observed history | Classification | strict C0 Ready | prepared Ready | migration |
+| --- | --- | --- | --- | --- |
+| database unavailable/read failure | `unavailable` | no | no | no |
+| history table absent | `no-table` | no | no | create the table, then treat as empty |
+| `{}` | `empty` | no | no | apply migration 1 |
+| `{1}` | `c0-v1` | yes | yes | safe idempotent no-op |
+| `{1,2}` | `expand-v1-v2` | no | yes | no; version 2 is externally staged/test-only |
+| `{2}` | `missing-base-v2` | no | no | no |
+| `{1,3}` or any non-contiguous/duplicate history | `gap` | no | no | no |
+| contiguous history beyond prepared version 2 | `unknown-future` | no | no | no |
 
 The table is stricter than `max(version) >= minimum`. Unknown or partially
 observed histories fail closed. No version 2 production DDL is part of C0.
 
 ## Required C1 sequence before a version 2 migration exists
 
-1. **Expand:** land additive DDL and a C1 binary that reads both shapes. Prove C0
-   still reads rows written by C1, including every field used by C0.
-2. **Mixed operation:** run C0 and C1 simultaneously. C1 dual-writes old and new
+1. **Prepare:** land the finite `prepared-v1-v2` binary while the database is
+   still `{1}`. Prove its real process is Ready and completes service CRUD.
+2. **Expand:** apply additive DDL and a C1 binary that reads both shapes. Prove
+   the prepared binary still reads rows written by C1, including every field it
+   uses.
+3. **Mixed operation:** run the prepared binary and C1 simultaneously. C1 dual-writes old and new
    representations; tests cover CRUD from both binaries and retry/idempotency.
-3. **Backfill:** make progress restartable and observable. A partial failure,
+4. **Backfill:** make progress restartable and observable. A partial failure,
    lock contention, cancellation, and rerun must not create a history gap or
    expose a row that neither binary can read.
-4. **Rollback window:** while C1 writes, downgrade to the fixed C0 binary and
+5. **Rollback window:** while C1 writes, downgrade to the fixed prepared binary and
    prove old-code reads after new-code writes. Keep dual-write active for the
    documented rollback window; do not stop old-column writes early.
-5. **Contract:** only after the rollback window and its evidence may a later
+6. **Contract:** only after the rollback window and its evidence may a later
    generation remove the old representation. Contract DDL is never bundled into
    the expand step.
 
@@ -48,9 +54,12 @@ schema/C1 dual writer with the fixed C0 SQL data reader. It also covers old-only
 dual-written, and divergent rows; mixed create/update/delete and uniqueness;
 transactional backfill failure, restart, and idempotent rerun.
 
-The C0 process remains deliberately **not Ready** for `{1,2}`, and its migration
-entry point rejects that history. A successful fixed C0 SQL read after a C1
-dual-write is data-path compatibility evidence only; it is not evidence that a
-C0 workload can be rolled back operationally. A future C1 runtime/profile must
-define and test that readiness window before any version 2 production DDL is
-added.
+Strict C0 remains deliberately **not Ready** for `{1,2}`. Both strict and
+prepared migration entry points reject that history, so the prepared profile
+cannot manufacture or advance an unshipped migration. The mandatory
+four-service process fixture starts each real service binary on `{1}`, applies
+test-only additive columns and `{1,2}`, proves strict readiness rejection,
+starts the prepared binaries, runs a separate test-only C1 dual-writer process,
+reads those rows through all four prepared APIs, then stops and restarts every
+prepared process. This is an operational rollback-window test in disposable
+databases, not authorization or DDL for a live database.

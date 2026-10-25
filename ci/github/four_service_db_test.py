@@ -27,13 +27,14 @@ class GateTests(unittest.TestCase):
 
     def test_real_suite_is_race_checked_and_bounded(self):
         command = four_service_db.build_command()
-        self.assertEqual(sum(map(len, four_service_db.EXPECTED.values())), 12)
+        self.assertEqual(sum(map(len, four_service_db.EXPECTED.values())), 13)
         self.assertIn("-race", command)
         self.assertIn("-timeout=6m", command)
         self.assertIn("github.com/syuhei0519/backend-app/internal/ordertest", command)
         self.assertIn("TestDisposableStartupFailureCleansUp", " ".join(command))
         self.assertIn("TestDisposableCancellationCleanup", " ".join(command))
         self.assertIn("TestDisposableAccountE1CompatibilityMatrix", " ".join(command))
+        self.assertIn("TestPreparedBinaryRollbackWindow", " ".join(command))
 
     def test_skip_fails(self):
         lines = self.complete()

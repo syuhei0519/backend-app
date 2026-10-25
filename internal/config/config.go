@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/syuhei0519/backend-app/internal/runtimeprofile"
 	"log/slog"
+	"net"
 	"os"
 	"strings"
 )
@@ -30,5 +31,12 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	return Config{Address: "0.0.0.0:8080", DatabaseURL: os.Getenv("DATABASE_URL"), LogLevel: level, Profile: profile}, nil
+	address := os.Getenv("ACCOUNT_HTTP_ADDRESS")
+	if address == "" {
+		address = "0.0.0.0:8080"
+	}
+	if _, _, err := net.SplitHostPort(address); err != nil {
+		return Config{}, errors.New("invalid ACCOUNT_HTTP_ADDRESS")
+	}
+	return Config{Address: address, DatabaseURL: os.Getenv("DATABASE_URL"), LogLevel: level, Profile: profile}, nil
 }
