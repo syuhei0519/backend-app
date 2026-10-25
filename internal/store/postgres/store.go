@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/syuhei0519/backend-app/internal/account"
+	"github.com/syuhei0519/backend-app/internal/schemahistory"
 	"github.com/syuhei0519/backend-app/internal/telemetry"
 	"time"
 )
@@ -55,12 +56,8 @@ func (s *Store) Close() { s.pool.Close() }
 func (s *Store) Ready(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	var version int
-	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&version); err != nil {
-		return err
-	}
-	if version != 1 {
-		return fmt.Errorf("incompatible schema version: %d", version)
+	if !schemahistory.C0Ready(schemahistory.Inspect(ctx, s.pool, "public.schema_migrations")) {
+		return account.ErrUnavailable
 	}
 	return nil
 }

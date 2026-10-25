@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,7 +21,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/syuhei0519/backend-app/internal/payment"
-	"github.com/syuhei0519/backend-app/internal/paymenttest"
+	paymenttest "github.com/syuhei0519/backend-app/internal/paymentdockertest"
 )
 
 // One DB/API lifecycle, including one API process restart. Opt-in only.
@@ -34,7 +35,11 @@ func TestDisposablePaymentLifecycle(t *testing.T) {
 		t.Fatal("fixture pool")
 	}
 	defer pool.Close()
-	binary := filepath.Join(t.TempDir(), "payment-server")
+	name := "payment-server"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	binary := filepath.Join(t.TempDir(), name)
 	if exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd/payment-server").Run() != nil {
 		t.Fatal("build Payment")
 	}
@@ -45,8 +50,14 @@ func TestDisposablePaymentLifecycle(t *testing.T) {
 		t.Helper()
 		c := exec.CommandContext(ctx, binary, "migrate")
 		c.Env = env("127.0.0.1:0")
-		if c.Run() != nil {
-			t.Fatal("owned migration")
+		out, err := c.Output()
+		if err != nil {
+			for _, message := range []string{"invalid Payment configuration", "Payment database configuration rejected", "Payment migration failed"} {
+				if bytes.Contains(out, []byte(message)) {
+					t.Fatalf("owned migration: %s", message)
+				}
+			}
+			t.Fatal("owned migration: unclassified process failure")
 		}
 	}
 	migrate()
@@ -110,6 +121,12 @@ func TestDisposablePaymentLifecycle(t *testing.T) {
 	}
 	stop := func(p *process) {
 		t.Helper()
+		if runtime.GOOS == "windows" {
+			_ = p.cmd.Process.Kill()
+			<-p.done
+			p.stopped = true
+			return
+		}
 		if p.cmd.Process.Signal(syscall.SIGTERM) != nil {
 			t.Fatal("signal Payment")
 		}

@@ -11,13 +11,20 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 const Image = "postgres@sha256:9b18b78397054fce88a9552e9d5a3ad5bb7fd258c5b3cc1c5028e46373d6ea8f"
-const socket = "unix:///var/run/docker.sock"
+
+func socket() string {
+	if runtime.GOOS == "windows" {
+		return "npipe:////./pipe/dockerDesktopLinuxEngine"
+	}
+	return "unix:///var/run/docker.sock"
+}
 
 type Database struct {
 	t                    *testing.T
@@ -34,7 +41,7 @@ func Enabled(t *testing.T) {
 func command(input string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "docker", append([]string{"--host", socket}, args...)...)
+	cmd := exec.CommandContext(ctx, "docker", append([]string{"--host", socket()}, args...)...)
 	cmd.Stdin = strings.NewReader(input)
 	// Do not inherit remote Docker context/host/TLS settings or record stderr.
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=/tmp"}
@@ -43,7 +50,11 @@ func command(input string, args ...string) ([]byte, error) {
 func Start(t *testing.T, db, role string) *Database {
 	t.Helper()
 	Enabled(t)
-	if !((db == "orders" && role == "order_app") || (db == "accounts" && role == "account_app")) {
+	allowed := map[string]string{
+		"accounts": "account_app", "orders": "order_app",
+		"payments": "payment_app", "notifications": "notification_app",
+	}
+	if allowed[db] != role {
 		t.Fatal("invalid disposable DB identity")
 	}
 	raw := make([]byte, 16)
@@ -67,7 +78,12 @@ func Start(t *testing.T, db, role string) *Database {
 	if _, err := command("", "image", "inspect", Image); err != nil {
 		t.Fatal("pinned PostgreSQL image not available locally")
 	}
-	if _, err := command("", "create", "--pull=never", "--name", d.name, "--label", "order-b1-disposable=true", "--publish", "127.0.0.1:"+allocated+":5432", "--env", "POSTGRES_PASSWORD="+nonce, Image); err != nil {
+	args := []string{"create", "--pull=never", "--name", d.name, "--label", "order-b1-disposable=true"}
+	if runID := os.Getenv("FOUR_SERVICE_RUN_ID"); runID != "" {
+		args = append(args, "--label", "backend-four-service-run="+runID)
+	}
+	args = append(args, "--publish", "127.0.0.1:"+allocated+":5432", "--env", "POSTGRES_PASSWORD="+nonce, Image)
+	if _, err := command("", args...); err != nil {
 		t.Fatal("create fresh disposable container failed")
 	}
 	t.Cleanup(func() {
@@ -108,7 +124,7 @@ func (d *Database) URL() string {
 	return (&url.URL{Scheme: "postgres", User: url.UserPassword(d.Role, d.password), Host: net.JoinHostPort("127.0.0.1", d.port), Path: "/" + d.DB, RawQuery: "sslmode=disable"}).String()
 }
 func (d *Database) AdminURL(db string) string {
-	if db != "orders" && db != "accounts" && db != "postgres" {
+	if db != d.DB && db != "postgres" {
 		d.t.Fatal("invalid test admin DB")
 	}
 	u, _ := url.Parse(d.URL())
