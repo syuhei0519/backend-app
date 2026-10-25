@@ -1,3 +1,4 @@
+// Account 呼び出しが親リクエストの中断とトレース情報を引き継ぐことを確認します。
 package accountclient
 
 import (

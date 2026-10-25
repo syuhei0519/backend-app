@@ -1,3 +1,4 @@
+// 描画済み Kubernetes YAML を読み、特権実行や平文の秘密など禁止した構成を検出します。
 package main
 
 import (

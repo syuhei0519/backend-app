@@ -1,3 +1,4 @@
+# Git で追跡しているソースだけを検査用に取り出し、ローカルの秘密や生成物の混入を防ぎます。
 """Read exact HEAD blobs without honoring archive export-ignore/subst attributes."""
 from pathlib import PurePosixPath
 import re

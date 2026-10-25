@@ -1,3 +1,4 @@
+# サービス別に分かれたイメージ検査結果を集め、欠落や失敗を成功扱いしないようにします。
 """Require complete same-source/run/attempt image artifacts, beyond matrix status."""
 import importlib.util
 from pathlib import Path

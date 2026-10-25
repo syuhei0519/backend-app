@@ -1,3 +1,4 @@
+// Notification サーバーの入口です。設定を読み、API 起動と DB migration の実行を切り替えます。
 // notification-server is an independent Notification API or forward-only migration process.
 package main
 

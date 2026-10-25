@@ -1,3 +1,4 @@
+// Notification の DB 結合試験で使う、使い捨て環境の準備と片付けをまとめます。
 // Package notificationtest owns one opt-in disposable Kubernetes DB fixture.
 // It never accepts a DSN or reuses a namespace, pod or volume. Do not run in an
 // implementation workspace: credentials/resources require separately approved testing.

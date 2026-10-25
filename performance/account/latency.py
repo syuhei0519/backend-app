@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 遅延を再現する試験用 HTTP サーバーを用意し、負荷計測の結果を確認します。
 """Synthetic delayed input, not an API performance regression or fault injection."""
 import argparse
 from datetime import datetime, timezone

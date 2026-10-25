@@ -1,3 +1,4 @@
+# 分散トレースの隔離試験で、受信した span を確認用ファイルへ出す Collector の設定です。
 # Disposable Cloud fixture only. Pinned existing platform Collector; no SaaS/Secret.
 receivers:
   otlp:

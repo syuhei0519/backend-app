@@ -14,3 +14,26 @@ FSのnpm開発依存は検査範囲に入る。最終runtime imageのSBOMが、�
 
 AT11_CASEは空（通常）またはscanner-timeout/stale-db/expired-exceptionの失敗専用列挙値だけを受け付ける。実Trivyの1ns timeout、privateの古いDBメタデータ、未使用でも失効した固定例外を実際の判定経路へ渡す。共有cacheと実policyは改変せず、未知値も失敗にする。隔離Dockerの実shell試験は三ケースとも意図した診断と非0終了を確認した。protected-main CIで後続publish/verify/proposalの停止を照合する受入は別途必須。
 
+## 構成と入口
+
+この階層のディレクトリと役割は次のとおりです。末端のファイルは親の説明から追えます。
+
+| 場所 | 役割 |
+| --- | --- |
+| [codeql/](codeql) | CodeQL 設定と保護ルールの提案。ファイルの存在だけでは適用済みを意味しません。 |
+| [sast-fixtures/](sast-fixtures) | 脆弱な例を検査器へ渡すための固定入力。アプリとして実行するものではありません。 |
+| [semgrep/](semgrep) | checksum を固定した Semgrep の検出ルール。内容の変更は方針・固定情報と合わせて扱います。 |
+
+### 本文にコメントを入れないファイル
+
+JSON などの形式、埋め込み・checksum、既存 reader の文字コードの前提を保つため、役割はここで説明します。
+
+| ファイル | 役割 |
+| --- | --- |
+| [codeql/default-setup.request.json](codeql/default-setup.request.json) | CodeQL の標準検査を設定する際に確認する要求内容です。設定変更を実行するファイルではありません。 |
+| [codeql/ruleset-proposal.json](codeql/ruleset-proposal.json) | CodeQL の必須チェックを保護ルールに組み込むための提案です。適用済みの状態とは区別します。 |
+| [sast-policy.json](sast-policy.json) | ソースコード検査の対象ルールと、検出を失敗にする段階を定めます。 |
+| [scan-policy.json](scan-policy.json) | 共有 scan-gate が使うセキュリティ検査の合否条件です。 |
+| [scan-policy.schema.json](scan-policy.schema.json) | 検査方針の JSON に必要な項目と許される値を定義します。 |
+| [semgrep/dynamic-shell-command.yaml](semgrep/dynamic-shell-command.yaml) | 組み立てた文字列をシェルへ渡す箇所を検出するローカルルールです。検査で checksum を照合します。 |
+| [semgrep/pgxpool-concatenated-query.yaml](semgrep/pgxpool-concatenated-query.yaml) | SQL を文字列連結で組み立てて pgxpool に渡す箇所を検出するルールです。検査で checksum を照合します。 |

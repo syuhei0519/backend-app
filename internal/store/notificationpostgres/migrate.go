@@ -6,6 +6,7 @@ import (
 	"context"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/syuhei0519/backend-app/internal/notification"
+	"github.com/syuhei0519/backend-app/internal/store/dbwait"
 	migrations "github.com/syuhei0519/backend-app/notification-migrations"
 	"io/fs"
 	"sort"
@@ -23,7 +24,7 @@ func (s *Store) Migrate(parent context.Context) error {
 	// Jobの180秒期限に対して処理は170秒までとし、後始末・プロセス終了用に10秒残す。
 	ctx, cancel := context.WithTimeout(parent, 170*time.Second)
 	defer cancel()
-	if err := waitForDatabase(ctx, s.pool.Ping, waitRetry); err != nil {
+	if err := dbwait.Wait(ctx, s.pool.Ping); err != nil {
 		return err
 	}
 	// session advisory lockは接続単位。poolから借りた同じ接続でlock・履歴照合・transaction・unlockを行う。

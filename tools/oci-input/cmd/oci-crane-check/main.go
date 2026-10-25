@@ -1,3 +1,4 @@
+// crane が取得した manifest と固定 digest を照合する、イメージ検査用コマンドです。
 // Reads an OCI directory using the same pinned reader as crane v0.21.7 push.
 // No registry client, credentials, or write operation is used here.
 package main

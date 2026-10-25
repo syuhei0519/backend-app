@@ -1,3 +1,4 @@
+# 人工的な scan・SBOM 入力を実際の検証器に渡し、証跡の取り違えや不正な結果を拒否することを確認します。
 """Real scan/SBOM validators with synthetic raw inputs; no network or registry."""
 import datetime as dt
 import json

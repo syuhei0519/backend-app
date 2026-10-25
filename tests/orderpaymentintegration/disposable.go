@@ -1,3 +1,4 @@
+// Order と Payment の結合試験に使う専用環境を準備し、試験後の片付けをまとめます。
 // Package orderpaymentintegration owns fresh local Order and Payment test containers.
 // It never accepts an operator DSN or reuses an existing container/volume.
 package orderpaymentintegration

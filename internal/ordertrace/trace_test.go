@@ -1,3 +1,4 @@
+// Order のトレース設定が任意の有効化条件と送信先の制限を守ることを確認します。
 package ordertrace
 
 import (

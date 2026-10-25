@@ -1,3 +1,4 @@
+// Payment サーバーの起動引数が正しく判定され、不明な引数が拒否されることを確認します。
 package main
 
 import "testing"

@@ -1,3 +1,4 @@
+# SonarQube への手動送信で、main の一致・入力・認証の扱いが制限を守ることを確認します。
 import importlib.util
 import os
 from pathlib import Path

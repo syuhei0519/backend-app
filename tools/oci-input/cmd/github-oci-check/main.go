@@ -1,3 +1,4 @@
+// GitHub CI から OCI の由来と内容を検証するためのコマンド入口です。
 package main
 
 import (

@@ -1,6 +1,6 @@
 // DB接続を実行せず、注入したPing/pauseで有限待機・復旧・中断を確認する。
 // 待機成功は実DB migration/lockの受入成功の代用ではない。
-package paymentpostgres
+package dbwait
 
 import (
 	"context"
@@ -65,5 +65,46 @@ func TestWaitHonorsShortParentDeadline(t *testing.T) {
 	err := waitForDatabase(ctx, func(trial context.Context) error { calls++; <-trial.Done(); return trial.Err() }, waitRetry)
 	if calls != 1 || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("calls=%d err=%v", calls, err)
+	}
+}
+
+// 中断済みなら DB に触れず、初回成功なら再試行しないことを公開関数で確認する。
+func TestWaitStopsOnCancellationOrSuccess(t *testing.T) {
+	t.Run("already canceled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := Wait(ctx, func(context.Context) error {
+			t.Fatal("ping after cancellation")
+			return nil
+		})
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("error=%v", err)
+		}
+	})
+	t.Run("first attempt succeeds", func(t *testing.T) {
+		calls := 0
+		var trial context.Context
+		err := Wait(context.Background(), func(ctx context.Context) error {
+			calls++
+			trial = ctx
+			return nil
+		})
+		if err != nil || calls != 1 || !errors.Is(trial.Err(), context.Canceled) {
+			t.Fatalf("calls=%d error=%v trial=%v", calls, err, trial.Err())
+		}
+	})
+}
+
+func TestWaitAcceptsSuccessOnLastAttempt(t *testing.T) {
+	calls, pauses := 0, 0
+	err := waitForDatabase(context.Background(), func(context.Context) error {
+		calls++
+		if calls == 10 {
+			return nil
+		}
+		return errors.New("not ready")
+	}, func(context.Context) error { pauses++; return nil })
+	if err != nil || calls != 10 || pauses != 9 {
+		t.Fatalf("calls=%d pauses=%d error=%v", calls, pauses, err)
 	}
 }

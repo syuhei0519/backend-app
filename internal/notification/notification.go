@@ -1,3 +1,4 @@
+// Notification のデータと業務上の入力条件を定義し、HTTP や DB に依存しない処理をまとめます。
 // Package notification defines immutable fake deliveries. OrderID is historical.
 package notification
 

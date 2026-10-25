@@ -1,3 +1,4 @@
+// 公開証跡の入力を厳密に読み、重複する JSON キーや不正な digest を拒否します。
 // JSON and digest boundaries shared by the current SBOM verifier.
 package release
 

@@ -1,3 +1,4 @@
+// API サーバーの Go module 名と依存ライブラリを定義し、ビルドとテストで使います。
 module github.com/syuhei0519/backend-app
 
 go 1.27.0

@@ -1,3 +1,4 @@
+// Order サーバーの環境変数を読み、起動に必要な値と接続先の条件を確認します。
 // Package orderconfig holds independent Order process settings.
 package orderconfig
 

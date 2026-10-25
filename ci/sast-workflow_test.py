@@ -1,3 +1,4 @@
+# GitHub のソースコード検査 workflow が、固定版や必須の検査条件を保つことを確認します。
 """Check that scanner failures cannot skip the existing image/release gate."""
 from pathlib import Path
 import re

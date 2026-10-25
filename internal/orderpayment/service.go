@@ -1,3 +1,4 @@
+// Order の存在を確認してから Payment へ依頼する、注文と支払いの間の処理です。
 // Package orderpayment coordinates one payment request without changing Order state.
 package orderpayment
 

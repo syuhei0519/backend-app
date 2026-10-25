@@ -1,3 +1,4 @@
+// CI が生成した SBOM を読み、検査したイメージの構成情報と照合するコマンド入口です。
 package main
 
 import (

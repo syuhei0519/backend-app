@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Account の読み取り負荷を実行する入口です。対象・頻度・時間を検証してから k6 を起動します。
 """Supported entrypoint: validate everything before k6 can send HTTP."""
 import argparse
 from datetime import datetime, timezone

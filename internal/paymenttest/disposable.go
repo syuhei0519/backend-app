@@ -1,3 +1,4 @@
+// Payment の DB 結合試験で使う、使い捨て環境の準備と片付けをまとめます。
 // Package paymenttest provisions only an explicitly enabled, isolated Kubernetes
 // fixture. No operator DSN, existing namespace, DB, pod or volume is accepted.
 package paymenttest

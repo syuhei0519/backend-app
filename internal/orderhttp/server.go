@@ -1,3 +1,4 @@
+// Order の HTTP 入口です。要求の検証、業務処理の呼び出し、応答と稼働確認を担当します。
 // Package orderhttp implements the strict Order wire contract.
 package orderhttp
 

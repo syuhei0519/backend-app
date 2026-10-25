@@ -1,3 +1,4 @@
+// Payment 呼び出しの入力・期限・応答検証と、再送を避ける振る舞いを確認します。
 package paymentclient
 
 import (

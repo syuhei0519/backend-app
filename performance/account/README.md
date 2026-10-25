@@ -107,3 +107,17 @@ python3 -I performance/account/isolated.py --binary .build/performance/server \
 実DB試験は既存使い捨てfixtureに限定し、既存normal/mixedの再試験をせずlatencyだけ実行可能。
 server-summaryは3 POSTの201とserver250ms超を確認して集計だけを残し、sentinel保持と所有fixture削除も検査する。
 Cloudで27 GET200/3 POST201・server最小401msを確認した。kindでの同時revision計測・Analysis abort/復帰は別担当の未確認項目。
+
+## 構成と入口
+
+
+主なファイルの入口です。
+
+| ファイル | 役割 |
+| --- | --- |
+| [isolated.py](isolated.py) | Account の負荷シナリオを使い捨て環境で確かめるため、隔離した試験を組み立てます。 |
+| [latency.py](latency.py) | 遅延を再現する試験用 HTTP サーバーを用意し、負荷計測の結果を確認します。 |
+| [run.py](run.py) | Account の読み取り負荷を実行する入口です。対象・頻度・時間を検証してから k6 を起動します。 |
+| [scenario.js](scenario.js) | k6 から Account の読み取り API を決めた割合で呼び、成功・入力エラーと待ち時間を計測します。 |
+| [test_latency.py](test_latency.py) | 遅延を再現する試験サーバーと計測の処理を、ローカルで確認します。 |
+| [test_scenario.py](test_scenario.py) | 負荷シナリオの対象制限とリクエストの組み立てを、稼働中 API を使わずに確認します。 |

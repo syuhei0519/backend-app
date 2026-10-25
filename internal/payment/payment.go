@@ -1,3 +1,4 @@
+// Payment のデータと業務上の入力条件を定義し、HTTP や DB に依存しない処理をまとめます。
 // Package payment defines immutable fake payment attempts.
 // OrderID is a historical reference; no Order existence check is performed.
 package payment

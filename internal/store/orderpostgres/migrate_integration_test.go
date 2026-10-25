@@ -1,3 +1,4 @@
+// 使い捨ての Order 用 DB で、migration の繰り返しと失敗時の扱いを確認する任意実行テストです。
 package orderpostgres
 
 import (

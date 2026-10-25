@@ -1,3 +1,4 @@
+// Payment サーバーの環境変数を読み、起動に必要な値と接続先の条件を確認します。
 // Package paymentconfig holds independent Payment process settings.
 package paymentconfig
 

@@ -1,3 +1,4 @@
+// Notification のデータを専用 PostgreSQL に保存・取得し、接続先と DB エラーの扱いを制限します。
 // Package notificationpostgres accesses only the notifications database as notification_app.
 package notificationpostgres
 

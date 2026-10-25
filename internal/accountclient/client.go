@@ -1,3 +1,4 @@
+// Order の作成前に Account の存在を HTTP で確認し、待ち時間と応答形式を制限します。
 // Package accountclient implements the bounded Order creation -> Account lookup.
 package accountclient
 

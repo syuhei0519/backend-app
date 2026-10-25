@@ -1,3 +1,4 @@
+# コンテナのビルドが独自 CA を取り込む条件と受け渡し方を確認します。
 """Synthetic argument/scope regressions; real TLS requires cold image builds."""
 import json
 import os

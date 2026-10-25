@@ -1,3 +1,4 @@
+# CI のイメージ起動試験で、対象サービスと隔離実行の条件を組み立てます。
 """Local disposable runtime check of the already checked OCI. No existing DB/volume.
 
 Docker import converts transport only; image ID must equal the OCI config digest.

@@ -1,3 +1,4 @@
+# 負荷シナリオの対象制限とリクエストの組み立てを、稼働中 API を使わずに確認します。
 """Boundary + real k6/HTTP fixture tests. No DB/cluster or persistent data."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util

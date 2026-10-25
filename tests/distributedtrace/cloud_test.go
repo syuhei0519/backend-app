@@ -1,3 +1,4 @@
+// 隔離環境で Order から Account へのトレースを採取する、明示的に有効化したときだけ動く試験です。
 package distributedtrace
 
 import (

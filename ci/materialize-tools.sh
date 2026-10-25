@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# この checkout の共有 Go ツールを利用側の作業領域へ配置します。既存の配置先への混在は拒否します。
 # Source is the fixed Action checkout (or an explicitly reviewed local checkout).
 set -euo pipefail
 source_root=$(cd "$(dirname "$0")/.." && pwd)

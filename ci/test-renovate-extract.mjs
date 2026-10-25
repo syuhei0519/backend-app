@@ -1,3 +1,4 @@
+// Renovate が共有 Action の固定参照を正しく見つけられることを確認します。
 // Offline tests of Renovate's own extractor. Requires a separately installed Renovate 44.167.1.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

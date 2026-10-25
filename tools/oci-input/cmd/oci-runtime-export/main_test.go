@@ -1,3 +1,4 @@
+// OCI の変換で設定・layer・digest の対応が崩れないことを確認します。
 package main
 
 import (
