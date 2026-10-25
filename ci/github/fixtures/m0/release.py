@@ -422,7 +422,7 @@ def verify():
     clean={key:value for key,value in os.environ.items() if key not in ('GH_TOKEN','GITHUB_TOKEN','EVIDENCE_READ_TOKEN','ACTIONS_RUNTIME_TOKEN')}
     Path('.trusted').mkdir(exist_ok=True)
     run(['docker','pull','alpine/helm:4.2.4@sha256:76c375eed56144c68d6197c55bc5a4552fb42002190b796729901cbab3ae6e51'],env=clean)
-    run(['docker','pull','golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b'],env=clean)
+    run(['docker','pull','golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5'],env=clean)
     run(['python3','-I','ci/trusted-render.py','--repo','.', '--target',base,'--source',head,'--verifier',verifier,
          '--producer-job-id',str(run_id),'--output','.trusted/github-render.json','--test-only'],env=clean)
     render=load('.trusted/github-render.json');require(render['targetSha']==base and render['sourceSha']==head and render['verifierSha']==verifier)
