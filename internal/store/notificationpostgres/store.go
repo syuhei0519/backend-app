@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/syuhei0519/backend-app/internal/notification"
+	"github.com/syuhei0519/backend-app/internal/schemahistory"
 )
 
 var ErrTarget = errors.New("Notification database target rejected")
@@ -66,11 +67,7 @@ func (s *Store) CheckTarget(ctx context.Context) error {
 func (s *Store) Ready(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	var version, count int
-	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(MAX(version),0),count(*) FROM public.notification_schema_migrations`).Scan(&version, &count); err != nil {
-		return classify(err)
-	}
-	if version != 1 || count != 1 {
+	if !schemahistory.C0Ready(schemahistory.Inspect(ctx, s.pool, "public.notification_schema_migrations")) {
 		return notification.ErrUnavailable
 	}
 	return nil
