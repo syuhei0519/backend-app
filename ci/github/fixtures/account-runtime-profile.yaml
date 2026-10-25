@@ -1,0 +1,7 @@
+owner: plat170-account
+sourceCommit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+imageRevision: sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+image: ghcr.io/owner/backend-app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+strategy: Canary
+promotionMode: auto
+analysisPluginEnabled: true
