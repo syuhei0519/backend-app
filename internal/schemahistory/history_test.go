@@ -2,6 +2,37 @@ package schemahistory
 
 import "testing"
 
+func TestFiniteCompatibilityPolicy(t *testing.T) {
+	for _, test := range []struct {
+		value string
+		want  Policy
+		ok    bool
+	}{
+		{"", StrictC0, true},
+		{"prepared-v1-v2", PreparedV1V2, true},
+		{"future", StrictC0, false},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			t.Setenv("SCHEMA_COMPATIBILITY_PROFILE", test.value)
+			got, err := LoadPolicy()
+			if got != test.want || (err == nil) != test.ok {
+				t.Fatalf("LoadPolicy()=(%q,%v)", got, err)
+			}
+		})
+	}
+	if StrictC0.Ready(Expand) || !StrictC0.Ready(C0) {
+		t.Fatal("strict C0 window widened")
+	}
+	if !PreparedV1V2.Ready(C0) || !PreparedV1V2.Ready(Expand) {
+		t.Fatal("prepared rollback window incomplete")
+	}
+	for _, state := range []State{Unavailable, NoTable, Empty, MissingBase, Gap, Future} {
+		if PreparedV1V2.Ready(state) {
+			t.Fatalf("prepared profile accepted %q", state)
+		}
+	}
+}
+
 func TestClassifyMatrix(t *testing.T) {
 	tests := []struct {
 		name      string

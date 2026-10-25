@@ -45,3 +45,16 @@ func TestUnknownRuntimeProfileRejected(t *testing.T) {
 		t.Fatal("unknown runtime profile accepted")
 	}
 }
+
+func TestAccountAddressIsFinite(t *testing.T) {
+	clearRuntimeProfile(t)
+	t.Setenv("ACCOUNT_HTTP_ADDRESS", "127.0.0.1:18081")
+	got, err := Load()
+	if err != nil || got.Address != "127.0.0.1:18081" {
+		t.Fatalf("address=%q err=%v", got.Address, err)
+	}
+	t.Setenv("ACCOUNT_HTTP_ADDRESS", "not-an-address")
+	if _, err := Load(); err == nil {
+		t.Fatal("invalid Account address accepted")
+	}
+}

@@ -40,6 +40,9 @@ EXPECTED = {
     "github.com/syuhei0519/backend-app/tests/orderpaymentintegration": {
         "TestOrderPaymentLifecycle",
     },
+    "github.com/syuhei0519/backend-app/tests/compatibilityintegration": {
+        "TestPreparedBinaryRollbackWindow",
+    },
 }
 
 
