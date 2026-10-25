@@ -1,5 +1,33 @@
 # PE-012 SDK計測契約
 
+## Existing kind identity contract (PLAT-194)
+
+The non-secret destination and resource namespace form an exact pair:
+
+| Collector host:port | POD_NAMESPACE |
+| --- | --- |
+| otel-collector.observability.svc.cluster.local:4318 | account (historical target) |
+| account-release-otel-collector.observability.svc.cluster.local:4318 | learning-account-release |
+
+The current manifest obtains namespace and Pod UID through the Downward API.
+Use the actual namespace; retain the build-time source SHA and environment=local.
+Crossed destination/namespace pairs, unknown destinations, credentials/query URLs
+and invalid source identities are rejected. The existing loopback test contract
+retains its account namespace. Keep telemetry enabled for integrated acceptance.
+
+Supply images from checked OCI artifacts of fixed protected-main revisions,
+verifying archive/manifest/config/source identity and the existing policy evidence.
+Registry publication is an independent, human-gated operation and is not needed
+for this local kind acceptance. No new registry credential or package-read scope
+is required. CI evidence does not itself authorize deployment; reviewed Git profile
+changes and Argo synchronization remain the ordinary deployment path.
+
+For release-orchestration acceptance, distinct main build identities are recorded
+with their exact code/documentation changes. Error/latency/missing-sample conditions
+are bounded test injections with their scope, recovery and measurements recorded
+separately. These results do not establish a new business-feature behavior change.
+
+
 Go OpenTelemetry SDK/OTLP HTTP exporterをv1.47.0へ固定する。SDKはbackendだけに存在し、NRキーを受け取らず、非秘密Collector endpointへ送る。OTLP endpointの受信先はlocal CollectorのHTTP4318と明示ローカルfixtureだけ、pathは/v1/metrics・/v1/tracesに固定。migrationはSDKを起動しない。
 
 service.name=account-backend、service.version=build-time VCS_REFの40桁source SHA、service.instance.id=プロセス起動UUID（Pod UIDとは別）。namespace/Pod UIDはDownward API、environment=localはmanifestの非秘密値。有効化時はidentity不足・未知endpointを起動エラーとする。endpoint未指定の旧配備では外部送信しない。
