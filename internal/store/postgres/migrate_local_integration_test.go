@@ -46,7 +46,7 @@ func TestDisposableAccountMigration(t *testing.T) {
 		t.Fatal("acquire Account fixture")
 	}
 	short, stop := context.WithTimeout(ctx, 100*time.Millisecond)
-	err = applyMigration(short, conn, 2, `CREATE TABLE partial_piece(id int); SELECT pg_sleep(10)`)
+	err = applyMigration(short, conn, nil, "schema_migrations", 2, `CREATE TABLE partial_piece(id int); SELECT pg_sleep(10)`)
 	stop()
 	conn.Release()
 	if err == nil {

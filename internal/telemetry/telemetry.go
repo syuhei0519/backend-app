@@ -73,7 +73,10 @@ func validateDestination(endpoint, namespace, environment, version string) error
 		// accountはno-profile移行中だけの旧入力。明示current profileは実namespaceを使う。
 		validNamespace = namespace == "account" || namespace == "learning-services-20261018"
 	case "account-release-otel-collector.observability.svc.cluster.local:4318":
+		// no-profile rollback image identity; the fresh runtime profile is not an alias for it.
 		validNamespace = namespace == "learning-account-release"
+	case "otel-collector.fresh-observability.svc.cluster.local:4318":
+		validNamespace = namespace == "fresh-account"
 	default:
 		if u.Hostname() != "localhost" && u.Hostname() != "127.0.0.1" {
 			return fmt.Errorf("invalid Collector endpoint")

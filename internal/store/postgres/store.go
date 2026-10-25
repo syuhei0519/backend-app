@@ -17,10 +17,13 @@ import (
 )
 
 type Store struct {
-	pool        *pgxpool.Pool
-	observation *telemetry.Telemetry
-	profile     *runtimeprofile.Profile
-	policy      schemahistory.Policy
+	pool            *pgxpool.Pool
+	observation     *telemetry.Telemetry
+	profile         *runtimeprofile.Profile
+	policy          schemahistory.Policy
+	accountsTable   string
+	migrationsTable string
+	historyTable    string
 }
 
 var (
@@ -66,7 +69,51 @@ func Open(ctx context.Context, url string, profiles ...*runtimeprofile.Profile) 
 	if err != nil {
 		return nil, errCreateDatabasePool
 	}
-	return &Store{pool: pool, profile: profile, policy: policy}, nil
+	return &Store{
+		pool:            pool,
+		profile:         profile,
+		policy:          policy,
+		accountsTable:   profileRelation(profile, "accounts"),
+		migrationsTable: profileRelation(profile, "schema_migrations"),
+		historyTable:    profileHistoryTable(profile),
+	}, nil
+}
+
+// profileRelation quotes the reviewed schema and relation as identifiers. The
+// legacy no-profile path keeps the historical unqualified relation name.
+func profileRelation(profile *runtimeprofile.Profile, relation string) string {
+	if profile == nil || profile.SchemaName == "" {
+		return relation
+	}
+	return pgx.Identifier{profile.SchemaName, relation}.Sanitize()
+}
+
+func profileHistoryTable(profile *runtimeprofile.Profile) string {
+	if profile == nil || profile.SchemaName == "" {
+		return "public.schema_migrations"
+	}
+	return profile.SchemaName + ".schema_migrations"
+}
+
+func (s *Store) accountRelation() string {
+	if s.accountsTable != "" {
+		return s.accountsTable
+	}
+	return profileRelation(s.profile, "accounts")
+}
+
+func (s *Store) migrationRelation() string {
+	if s.migrationsTable != "" {
+		return s.migrationsTable
+	}
+	return profileRelation(s.profile, "schema_migrations")
+}
+
+func (s *Store) migrationHistoryTable() string {
+	if s.historyTable != "" {
+		return s.historyTable
+	}
+	return profileHistoryTable(s.profile)
 }
 
 // 通常のプロセス終了でpoolを閉じる。借用中の接続の返却を待つ。
@@ -77,19 +124,26 @@ func (s *Store) Ready(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	if s.profile != nil {
-		var database, role, owner string
-		err := s.pool.QueryRow(ctx, `SELECT current_database(),current_user,pg_get_userbyid(d.datdba) FROM pg_database AS d WHERE d.datname=current_database()`).Scan(&database, &role, &owner)
+		var database, role, owner, schemaOwner string
+		err := s.pool.QueryRow(ctx, `SELECT current_database(),current_user,pg_get_userbyid(d.datdba),pg_get_userbyid(n.nspowner) FROM pg_database AS d JOIN pg_namespace AS n ON n.nspname=$1 WHERE d.datname=current_database()`, s.profile.SchemaName).Scan(&database, &role, &owner, &schemaOwner)
 		if err != nil {
 			return err
 		}
-		if err := s.profile.ValidateDatabaseIdentity(database, role, owner); err != nil {
+		if err := validateRuntimeIdentity(s.profile, database, role, owner, schemaOwner); err != nil {
 			return err
 		}
 	}
-	if !s.policy.Ready(schemahistory.Inspect(ctx, s.pool, "public.schema_migrations")) {
+	if !s.policy.Ready(schemahistory.Inspect(ctx, s.pool, s.migrationHistoryTable())) {
 		return account.ErrUnavailable
 	}
 	return nil
+}
+
+func validateRuntimeIdentity(profile *runtimeprofile.Profile, database, role, owner, schemaOwner string) error {
+	if profile == nil || profile.Operation() != runtimeprofile.OperationRuntime {
+		return errors.New("Account runtime profile rejected")
+	}
+	return profile.ValidateDatabaseIdentity(database, role, owner, schemaOwner)
 }
 
 // 各CRUD SQLを3秒に制限。親HTTPのキャンセルはこの子contextにも伝わる。
@@ -104,7 +158,7 @@ func (s *Store) List(ctx context.Context) (result []account.Account, err error) 
 	defer func() { end(err) }()
 	ctx, cancel := timeout(ctx)
 	defer cancel()
-	rows, err := s.pool.Query(ctx, `SELECT id,name,email,created_at,updated_at FROM accounts ORDER BY id`)
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT id,name,email,created_at,updated_at FROM %s ORDER BY id`, s.accountRelation()))
 	if err != nil {
 		return nil, unavailable(err)
 	}
@@ -126,7 +180,7 @@ func (s *Store) Get(ctx context.Context, id int64) (result account.Account, err 
 	defer func() { end(err) }()
 	ctx, cancel := timeout(ctx)
 	defer cancel()
-	return scan(s.pool.QueryRow(ctx, `SELECT id,name,email,created_at,updated_at FROM accounts WHERE id=$1`, id))
+	return scan(s.pool.QueryRow(ctx, fmt.Sprintf(`SELECT id,name,email,created_at,updated_at FROM %s WHERE id=$1`, s.accountRelation()), id))
 }
 
 // 単一INSERTはDB側で原子的に実行される。RETURNINGで採番・DB時刻を含む確定結果を返す。
@@ -135,7 +189,7 @@ func (s *Store) Create(ctx context.Context, input account.Input) (result account
 	defer func() { end(err) }()
 	ctx, cancel := timeout(ctx)
 	defer cancel()
-	return scan(s.pool.QueryRow(ctx, `INSERT INTO accounts(name,email) VALUES($1,$2) RETURNING id,name,email,created_at,updated_at`, input.Name, input.Email))
+	return scan(s.pool.QueryRow(ctx, fmt.Sprintf(`INSERT INTO %s(name,email) VALUES($1,$2) RETURNING id,name,email,created_at,updated_at`, s.accountRelation()), input.Name, input.Email))
 }
 
 // 更新値もパラメータ化。updated_atはDB時刻へ更新し、対象なしならErrNotFound。
@@ -144,7 +198,7 @@ func (s *Store) Update(ctx context.Context, id int64, input account.Input) (resu
 	defer func() { end(err) }()
 	ctx, cancel := timeout(ctx)
 	defer cancel()
-	return scan(s.pool.QueryRow(ctx, `UPDATE accounts SET name=$2,email=$3,updated_at=now() WHERE id=$1 RETURNING id,name,email,created_at,updated_at`, id, input.Name, input.Email))
+	return scan(s.pool.QueryRow(ctx, fmt.Sprintf(`UPDATE %s SET name=$2,email=$3,updated_at=now() WHERE id=$1 RETURNING id,name,email,created_at,updated_at`, s.accountRelation()), id, input.Name, input.Email))
 }
 
 // 削除件数0はErrNotFound。成功後HTTP層が204を返す。自動再試行は行わない。
@@ -153,7 +207,7 @@ func (s *Store) Delete(ctx context.Context, id int64) (err error) {
 	defer func() { end(err) }()
 	ctx, cancel := timeout(ctx)
 	defer cancel()
-	tag, err := s.pool.Exec(ctx, `DELETE FROM accounts WHERE id=$1`, id)
+	tag, err := s.pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s WHERE id=$1`, s.accountRelation()), id)
 	if err != nil {
 		return unavailable(err)
 	}

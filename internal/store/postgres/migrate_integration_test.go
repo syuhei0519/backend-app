@@ -97,7 +97,7 @@ func TestMigrationDisposableDatabase(t *testing.T) {
 	}
 	defer conn.Release()
 	interrupted, halt := context.WithTimeout(ctx, 100*time.Millisecond)
-	err = applyMigration(interrupted, conn, 2, "CREATE TABLE interrupted_piece(id integer); SELECT pg_sleep(10)")
+	err = applyMigration(interrupted, conn, nil, "schema_migrations", 2, "CREATE TABLE interrupted_piece(id integer); SELECT pg_sleep(10)")
 	halt()
 	if err == nil {
 		t.Fatal("SQL interruption was not observed")
@@ -116,7 +116,7 @@ func TestMigrationDisposableDatabase(t *testing.T) {
 	if err = conn.QueryRow(ctx, "SELECT count(*) FROM schema_migrations WHERE version=2").Scan(&count); err != nil || count != 0 {
 		t.Fatalf("partial history survived: err=%v", err)
 	}
-	if err = applyMigration(ctx, conn, 2, "CREATE TABLE interrupted_piece(id integer)"); err != nil {
+	if err = applyMigration(ctx, conn, nil, "schema_migrations", 2, "CREATE TABLE interrupted_piece(id integer)"); err != nil {
 		t.Fatal("SQL retry failed", err)
 	}
 	t.Log("idempotence, lock cancellation/recovery, interrupted DDL/history rollback and retry passed")

@@ -220,6 +220,7 @@ func TestInitEnvironmentSubprocess(t *testing.T) {
 func TestCollectorNamespaceIdentityPairs(t *testing.T) {
 	shared := "http://otel-collector.observability.svc.cluster.local:4318"
 	dedicated := "http://account-release-otel-collector.observability.svc.cluster.local:4318"
+	fresh := "http://otel-collector.fresh-observability.svc.cluster.local:4318"
 	for _, tc := range []struct {
 		name, endpoint, namespace, environment, version string
 		allowed                                         bool
@@ -227,8 +228,12 @@ func TestCollectorNamespaceIdentityPairs(t *testing.T) {
 		{"legacy-account-transition", shared, "account", "local", fixtureVersion, true},
 		{"current-existing-kind-account", shared, "learning-services-20261018", "local", fixtureVersion, true},
 		{"fresh-learning-account-release", dedicated, "learning-account-release", "local", fixtureVersion, true},
+		{"fresh-account", fresh, "fresh-account", "local", fixtureVersion, true},
 		{"current-crossed-dedicated", dedicated, "learning-services-20261018", "local", fixtureVersion, false},
 		{"fresh-crossed-shared", shared, "learning-account-release", "local", fixtureVersion, false},
+		{"fresh-account-crossed-shared", shared, "fresh-account", "local", fixtureVersion, false},
+		{"fresh-account-crossed-rollback", dedicated, "fresh-account", "local", fixtureVersion, false},
+		{"rollback-crossed-fresh", fresh, "learning-account-release", "local", fixtureVersion, false},
 		{"legacy-crossed-dedicated", dedicated, "account", "local", fixtureVersion, false},
 		{"other-namespace", dedicated, "sonarqube", "local", fixtureVersion, false},
 		{"other-collector", "http://unknown.observability.svc.cluster.local:4318", "learning-account-release", "local", fixtureVersion, false},
@@ -236,6 +241,7 @@ func TestCollectorNamespaceIdentityPairs(t *testing.T) {
 		{"untrusted-source", dedicated, "learning-account-release", "local", "unknown", false},
 		{"credential-url", "http://user:pass@account-release-otel-collector.observability.svc.cluster.local:4318", "learning-account-release", "local", fixtureVersion, false},
 		{"query-url", dedicated + "?key=value", "learning-account-release", "local", fixtureVersion, false},
+		{"fresh-credential-url", "http://user:pass@otel-collector.fresh-observability.svc.cluster.local:4318", "fresh-account", "local", fixtureVersion, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validateDestination(tc.endpoint, tc.namespace, tc.environment, tc.version)

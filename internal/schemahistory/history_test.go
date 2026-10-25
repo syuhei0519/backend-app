@@ -79,3 +79,13 @@ func TestC0GatesAreExact(t *testing.T) {
 		t.Fatal("empty/C0 migration was rejected")
 	}
 }
+
+func TestAccountSchemaHistoryIsFinite(t *testing.T) {
+	query, ok := historyQueries["account.schema_migrations"]
+	if !ok || query != `SELECT version FROM account.schema_migrations ORDER BY version` {
+		t.Fatal("fresh Account schema history is not fixed")
+	}
+	if _, ok := historyQueries["other.schema_migrations"]; ok {
+		t.Fatal("unreviewed Account schema history accepted")
+	}
+}

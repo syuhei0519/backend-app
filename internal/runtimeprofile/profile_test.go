@@ -16,29 +16,51 @@ func clearProfileEnvironment(t *testing.T) {
 	}
 }
 
-func setProfile(t *testing.T, profile Profile) {
+func setProfile(t *testing.T, profile Profile, operation Operation) Profile {
 	t.Helper()
+	profile, err := profile.ForOperation(operation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	role, err := profile.DatabaseRole()
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("ACCOUNT_RUNTIME_PROFILE", profile.Name)
 	t.Setenv("PGHOST", profile.DatabaseHost)
 	t.Setenv("PGPORT", "5432")
 	t.Setenv("PGDATABASE", profile.DatabaseName)
-	t.Setenv("PGUSER", profile.DatabaseRole)
+	t.Setenv("PGUSER", role)
 	t.Setenv("PGPASSWORD", "fixture-secret")
 	t.Setenv("PGSSLMODE", "disable")
 	t.Setenv("POD_NAMESPACE", profile.Namespace)
 	t.Setenv("POD_UID", "fixture-pod-uid")
 	t.Setenv("DEPLOYMENT_ENVIRONMENT", profile.Environment)
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", profile.CollectorEndpoint)
+	return profile
 }
 
 func TestFiniteProfilesLoad(t *testing.T) {
-	for _, name := range []string{CurrentExistingKindAccount, FreshLearningAccountRelease} {
-		t.Run(name, func(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		operation Operation
+		role      string
+	}{
+		{CurrentExistingKindAccount, OperationRuntime, "account_app"},
+		{CurrentExistingKindAccount, OperationMigrate, "account_app"},
+		{FreshAccount, OperationRuntime, "account_runtime"},
+		{FreshAccount, OperationMigrate, "account_migrator"},
+	} {
+		t.Run(test.name+"-"+string(test.operation), func(t *testing.T) {
 			clearProfileEnvironment(t)
-			setProfile(t, profiles[name])
-			got, err := Load()
-			if err != nil || got == nil || got.Name != name {
+			setProfile(t, profiles[test.name], test.operation)
+			got, err := Load(test.operation)
+			if err != nil || got == nil || got.Name != test.name {
 				t.Fatalf("profile=%v err=%v", got, err)
+			}
+			role, err := got.DatabaseRole()
+			if err != nil || role != test.role {
+				t.Fatalf("role=%q err=%v", role, err)
 			}
 		})
 	}
@@ -46,7 +68,7 @@ func TestFiniteProfilesLoad(t *testing.T) {
 
 func TestLegacyCompatibleWhenProfileAbsent(t *testing.T) {
 	clearProfileEnvironment(t)
-	got, err := Load()
+	got, err := Load(OperationRuntime)
 	if err != nil || got != nil {
 		t.Fatalf("profile=%v err=%v", got, err)
 	}
@@ -55,7 +77,7 @@ func TestLegacyCompatibleWhenProfileAbsent(t *testing.T) {
 func TestUnknownProfileSettingNeverFallsBackToLegacy(t *testing.T) {
 	clearProfileEnvironment(t)
 	t.Setenv("ACCOUNT_RUNTIME_PROFILE_TARGET", "other")
-	if _, err := Load(); err == nil {
+	if _, err := Load(OperationRuntime); err == nil {
 		t.Fatal("unknown profile setting fell back to legacy mode")
 	}
 }
@@ -79,10 +101,10 @@ func TestProfileInputsFailClosedWithoutLeakingValues(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			clearProfileEnvironment(t)
-			setProfile(t, profiles[CurrentExistingKindAccount])
+			setProfile(t, profiles[CurrentExistingKindAccount], OperationRuntime)
 			t.Setenv("PGPASSWORD", secret)
 			test.edit(t)
-			_, err := Load()
+			_, err := Load(OperationRuntime)
 			if err == nil {
 				t.Fatal("invalid profile accepted")
 			}
@@ -104,9 +126,9 @@ func TestAllUnreviewedDriverSettingsFailClosed(t *testing.T) {
 	} {
 		t.Run(key, func(t *testing.T) {
 			clearProfileEnvironment(t)
-			setProfile(t, profiles[CurrentExistingKindAccount])
+			setProfile(t, profiles[CurrentExistingKindAccount], OperationRuntime)
 			t.Setenv(key, secret)
-			_, err := Load()
+			_, err := Load(OperationRuntime)
 			if err == nil {
 				t.Fatal("unreviewed driver setting accepted")
 			}
@@ -118,13 +140,29 @@ func TestAllUnreviewedDriverSettingsFailClosed(t *testing.T) {
 }
 
 func TestDatabaseIdentityUsesActualValues(t *testing.T) {
-	profile := profiles[CurrentExistingKindAccount]
-	if err := profile.ValidateDatabaseIdentity("account", "account_app", "account_app"); err != nil {
+	profile, err := profiles[FreshAccount].ForOperation(OperationRuntime)
+	if err != nil {
 		t.Fatal(err)
 	}
-	for _, values := range [][3]string{{"other", "account_app", "account_app"}, {"account", "other", "account_app"}, {"account", "account_app", "other"}} {
-		if err := profile.ValidateDatabaseIdentity(values[0], values[1], values[2]); err == nil {
+	if err := profile.ValidateDatabaseIdentity("account", "account_runtime", "postgres", "account_migrator"); err != nil {
+		t.Fatal(err)
+	}
+	for _, values := range [][4]string{
+		{"other", "account_runtime", "postgres", "account_migrator"},
+		{"account", "account_migrator", "postgres", "account_migrator"},
+		{"account", "account_runtime", "other", "account_migrator"},
+		{"account", "account_runtime", "postgres", "other"},
+	} {
+		if err := profile.ValidateDatabaseIdentity(values[0], values[1], values[2], values[3]); err == nil {
 			t.Fatal("wrong actual database identity accepted")
 		}
+	}
+}
+
+func TestOldFreshProfileNameIsNotAnAlias(t *testing.T) {
+	clearProfileEnvironment(t)
+	t.Setenv("ACCOUNT_RUNTIME_PROFILE", "fresh-learning-account-release")
+	if _, err := Load(OperationRuntime); err == nil {
+		t.Fatal("retired fresh profile alias accepted")
 	}
 }
