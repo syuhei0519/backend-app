@@ -1,5 +1,7 @@
 # backend-app
 
+API の変更が CI、イメージ、manifest PR、Argo CD、Pod へ届く流れは [4 repository 共通の学習ガイド](https://github.com/syuhei0519/platform-gitops/blob/205e9a652d9fa5b550c7cb813bf94a64fcfa7f62/docs/learning-guides/README.md) を参照してください。障害時の復旧と検証結果の読み方も、確認済みの結果と未完了部分を分けて説明しています。
+
 ## Existing kind deployment (PLAT-195/198)
 
 For `kind-learning-20261018-69c763`, the ordinary deployment entry is a reviewed
