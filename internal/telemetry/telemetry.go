@@ -64,7 +64,7 @@ func New(mp metric.MeterProvider, tp trace.TracerProvider, res *resource.Resourc
 // telemetry working while permitting only the reviewed existing-kind Account target.
 func validateDestination(endpoint, namespace, environment, version string) error {
 	u, err := url.Parse(endpoint)
-	if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+	if err != nil || u.Scheme != "http" || u.Opaque != "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return fmt.Errorf("invalid Collector endpoint")
 	}
 	expectedNamespace := "account"
@@ -83,12 +83,30 @@ func validateDestination(endpoint, namespace, environment, version string) error
 	return nil
 }
 
+// SDK v1.47は明示optionより先に環境変数を解析するため、不正値をSDKへ渡すと
+// internal loggerへ元の値が出る。Accountが所有しない暗黙設定は解析前に拒否する。
+func validateExporterEnvironment() error {
+	for _, suffix := range []string{
+		"HEADERS", "CERTIFICATE", "CLIENT_CERTIFICATE", "CLIENT_KEY", "INSECURE", "COMPRESSION", "PROTOCOL", "TIMEOUT",
+		"TRACES_ENDPOINT", "TRACES_HEADERS", "TRACES_CERTIFICATE", "TRACES_CLIENT_CERTIFICATE", "TRACES_CLIENT_KEY", "TRACES_INSECURE", "TRACES_COMPRESSION", "TRACES_PROTOCOL", "TRACES_TIMEOUT",
+		"METRICS_ENDPOINT", "METRICS_HEADERS", "METRICS_CERTIFICATE", "METRICS_CLIENT_CERTIFICATE", "METRICS_CLIENT_KEY", "METRICS_INSECURE", "METRICS_COMPRESSION", "METRICS_TIMEOUT", "METRICS_TEMPORALITY_PREFERENCE", "METRICS_DEFAULT_HISTOGRAM_AGGREGATION",
+	} {
+		if os.Getenv("OTEL_EXPORTER_OTLP_"+suffix) != "" {
+			return errors.New("unsupported Account telemetry environment")
+		}
+	}
+	return nil
+}
+
 // プロセス起動ごとにinstance UUIDを作る。Pod UIDとは別なので同Pod内再起動でも区別できる。
 func Init(ctx context.Context, version string, logger *slog.Logger) (*Telemetry, error) {
 	instance := uuid.NewString()
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint != "" {
 		if err := validateDestination(endpoint, os.Getenv("POD_NAMESPACE"), os.Getenv("DEPLOYMENT_ENVIRONMENT"), version); err != nil {
+			return nil, err
+		}
+		if err := validateExporterEnvironment(); err != nil {
 			return nil, err
 		}
 	}
@@ -102,13 +120,13 @@ func Init(ctx context.Context, version string, logger *slog.Logger) (*Telemetry,
 		// 後段Prometheusのscrape30秒とは別の周期。観測先停止はCRUDを同期的に待たせない設計。
 		me, err := otlpmetrichttp.New(ctx, otlpmetrichttp.WithEndpointURL(endpoint), otlpmetrichttp.WithURLPath("/v1/metrics"), otlpmetrichttp.WithTimeout(3*time.Second), otlpmetrichttp.WithHeaders(map[string]string{}), otlpmetrichttp.WithRetry(otlpmetrichttp.RetryConfig{Enabled: false}), otlpmetrichttp.WithTemporalitySelector(func(sdkmetric.InstrumentKind) metricdata.Temporality { return metricdata.CumulativeTemporality }))
 		if err != nil {
-			return nil, err
+			return nil, errors.New("Account metric exporter initialization failed")
 		}
 		readers = append(readers, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(me, sdkmetric.WithInterval(10*time.Second), sdkmetric.WithTimeout(3*time.Second))))
 		te, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint), otlptracehttp.WithURLPath("/v1/traces"), otlptracehttp.WithTimeout(3*time.Second), otlptracehttp.WithHeaders(map[string]string{}), otlptracehttp.WithRetry(otlptracehttp.RetryConfig{Enabled: false}))
 		if err != nil {
 			_ = me.Shutdown(ctx)
-			return nil, err
+			return nil, errors.New("Account trace exporter initialization failed")
 		}
 		// spanは非同期batchへ渡す。queue256、batch最大64、待機1秒、export3秒の有限設定。
 		// 混雑時や送信障害ではspan欠損を許容し、全span保存を保証しない。
