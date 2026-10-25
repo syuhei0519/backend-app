@@ -201,5 +201,20 @@ class WorkflowPublication(unittest.TestCase):
         self.assertIn('    permissions:\n      contents: write\n      packages: write\n',publish)
         self.assertIn('    permissions:\n      contents: read\n',propose)
 
+    def test_required_validation_is_not_serialized_by_publication_approval(self):
+        # A protected-main publish may wait indefinitely for its environment
+        # approval. Workflow-wide concurrency would make that wait block the
+        # required checks for every later main commit, so only the publication
+        # jobs may be serialized.
+        workflow_header=self.workflow.split('jobs:\n',1)[0]
+        self.assertNotRegex(workflow_header,r'(?m)^concurrency:')
+        publish=self.block('publish')
+        self.assertIn('environment: ghcr-publish',publish)
+        self.assertIn('    concurrency:\n      group: ghcr-publication-${{ matrix.service }}\n      cancel-in-progress: false\n',publish)
+        self.assertIn("github.event_name == 'push' && github.ref == 'refs/heads/main'",publish)
+        self.assertIn('github.ref_protected',publish)
+        self.assertIn("vars.ENABLE_GHCR_PUBLISH == 'true'",publish)
+        self.assertIn('run: python3 -I ci/github/release.py publish',publish)
+
 
 if __name__=='__main__':unittest.main()
