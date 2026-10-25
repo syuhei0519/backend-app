@@ -50,18 +50,26 @@ class Boundary(unittest.TestCase):
     def test_current_runtime_profile_patch_is_finite(self):
         fixture=Path(__file__).with_name('fixtures')/'account-runtime-profile.yaml'
         before=fixture.read_text(encoding='utf-8')
-        record={'imageRepository':'ghcr.io/owner/backend-app','imageDigest':'sha256:'+'c'*64}
-        after=m.patch_runtime_profile(before,'owner/backend-app','d'*40,record)
-        profile=m.parse_runtime_profile(after)
-        self.assertEqual(profile,{
-            'owner':'plat170-account','sourceCommit':'d'*40,
-            'imageRevision':'sha256-'+'c'*56,
-            'image':'ghcr.io/owner/backend-app@sha256:'+'c'*64,
-            'strategy':'Canary','promotionMode':'auto','analysisPluginEnabled':True})
-        for preserved in ('owner: plat170-account','strategy: Canary','promotionMode: auto',
+        commit='d'*40;digest='sha256:'+'c'*64;run=12;attempt=3
+        base=f'https://github.com/owner/backend-app/releases/download/gha-{commit}-{run}-{attempt}/'
+        urls={'release-record.json':base+'release-record.json','sbom.cdx.json':base+'sbom.cdx.json'}
+        record={'sourceCommit':commit,'workflowRef':'owner/backend-app/.github/workflows/ci.yml@refs/heads/main',
+                'runId':run,'runAttempt':attempt,'imageRepository':'ghcr.io/owner/backend-app',
+                'imageDigest':digest,'sbomSha256':'e'*64}
+        after=m.patch_runtime_profile(before,'owner/backend-app',commit,record,urls,'f'*64)
+        for expected in ('sourceCommit: "'+commit+'"','imageRevision: "sha256-'+'c'*56+'"',
+                         '  repository: "ghcr.io/owner/backend-app"','  tag: "'+commit+'"',
+                         '  digest: "'+digest+'"','  schemaVersion: "github-v1"',
+                         '  event: "push"','  ref: "refs/heads/main"',
+                         '  workflowRef: "owner/backend-app/.github/workflows/ci.yml@refs/heads/main"',
+                         '  runId: "12"','  runAttempt: "3"','  recordUrl: "'+urls['release-record.json']+'"',
+                         '  recordSha256: "'+'f'*64+'"','  sbomUrl: "'+urls['sbom.cdx.json']+'"',
+                         '  sbomSha256: "'+'e'*64+'"','  published: true'):
+            self.assertIn(expected,after)
+        for preserved in ('owner: "plat170-account"','strategy: "Canary"','promotionMode: "auto"',
                           'analysisPluginEnabled: true'):
             self.assertIn(preserved,after)
-        self.assertNotIn('runId',after);self.assertNotIn('workflowRef',after)
+        self.assertNotIn('image: ghcr.io/',after)
     def test_runtime_profile_patch_rejects_malformed_or_unapproved_input(self):
         fixture=(Path(__file__).with_name('fixtures')/'account-runtime-profile.yaml').read_text(encoding='utf-8')
         invalid=(fixture+'owner: plat170-account\n',
@@ -71,15 +79,25 @@ class Boundary(unittest.TestCase):
                  fixture.replace('strategy: Canary','strategy: Rolling'),
                  fixture.replace('analysisPluginEnabled: true','analysisPluginEnabled: false'),
                  fixture.replace('image: ghcr.io/owner/backend-app@','image:\n  repository: ghcr.io/owner/backend-app@'))
-        record={'imageRepository':'ghcr.io/owner/backend-app','imageDigest':'sha256:'+'c'*64}
+        commit='d'*40;run=12;attempt=3
+        base=f'https://github.com/owner/backend-app/releases/download/gha-{commit}-{run}-{attempt}/'
+        urls={'release-record.json':base+'release-record.json','sbom.cdx.json':base+'sbom.cdx.json'}
+        record={'sourceCommit':commit,'workflowRef':'owner/backend-app/.github/workflows/ci.yml@refs/heads/main',
+                'runId':run,'runAttempt':attempt,'imageRepository':'ghcr.io/owner/backend-app',
+                'imageDigest':'sha256:'+'c'*64,'sbomSha256':'e'*64}
         for text in invalid:
             with self.subTest(text=text),self.assertRaises(ValueError):
-                m.patch_runtime_profile(text,'owner/backend-app','d'*40,record)
+                m.patch_runtime_profile(text,'owner/backend-app',commit,record,urls,'f'*64)
         for changed in ({'imageRepository':'ghcr.io/other/backend-app'},
                         {'imageDigest':'sha256:bad'},
-                        {'service':'order'}):
+                        {'service':'order'},
+                        {'runAttempt':0},
+                        {'workflowRef':'owner/backend-app/.github/workflows/other.yml@refs/heads/main'}):
             with self.subTest(changed=changed),self.assertRaises(ValueError):
-                m.patch_runtime_profile(fixture,'owner/backend-app','d'*40,{**record,**changed})
+                m.patch_runtime_profile(fixture,'owner/backend-app',commit,{**record,**changed},urls,'f'*64)
+        bad_urls={**urls,'release-record.json':urls['release-record.json'].replace('-12-3/','-13-3/')}
+        with self.assertRaises(ValueError):
+            m.patch_runtime_profile(fixture,'owner/backend-app',commit,record,bad_urls,'f'*64)
     def test_proposal_targets_only_current_profile(self):
         self.assertEqual(m.proposal_path('backend'),'learning/account-release/runtime-profile.yaml')
         for service in ('order','frontend','unknown'):

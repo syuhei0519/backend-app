@@ -405,22 +405,38 @@ def parse_runtime_profile(text):
         require(isinstance(profile['bootstrapHash'],str) and re.fullmatch(r'(?:[a-z0-9]{5,16})?',profile['bootstrapHash']))
     return profile
 
-def patch_runtime_profile(text,repo,commit,result):
+def patch_runtime_profile(text,repo,commit,result,urls,record_hash):
     service,image_repository,_,_=service_contract(repo,result.get('service'))
     require(service=='backend' and SHA.fullmatch(commit) and
-            result['imageRepository']==image_repository and DIGEST.fullmatch(result['imageDigest']))
+            result['imageRepository']==image_repository and DIGEST.fullmatch(result['imageDigest']) and
+            result['sourceCommit']==commit and
+            result['workflowRef']==repo+'/.github/workflows/ci.yml@refs/heads/main' and
+            type(result['runId']) is int and result['runId']>0 and
+            type(result['runAttempt']) is int and result['runAttempt']>0 and
+            re.fullmatch(r'[a-f0-9]{64}',result['sbomSha256']) and re.fullmatch(r'[a-f0-9]{64}',record_hash))
     before=parse_runtime_profile(text)
     digest=result['imageDigest']
-    updates={'sourceCommit':commit,'image':image_repository+'@'+digest,
-             'imageRevision':'sha256-'+digest[7:][:56]}
-    lines=[]
-    for line in text.splitlines():
-        key=line.split(':',1)[0]
-        lines.append(key+': '+json.dumps(updates[key]) if key in updates else line)
-    after='\n'.join(lines)+'\n'
-    parsed=parse_runtime_profile(after)
-    require(all(parsed[key]==before[key] for key in before if key not in updates) and
-            all(parsed[key]==value for key,value in updates.items()))
+    base=f'https://github.com/{repo}/releases/download/gha-{commit}-{result["runId"]}-{result["runAttempt"]}/'
+    require(urls=={'release-record.json':base+'release-record.json','sbom.cdx.json':base+'sbom.cdx.json'})
+    def scalar(key,value,indent=''):
+        return indent+key+': '+json.dumps(value,separators=(',',':'))+'\n'
+    after=scalar('owner',before['owner'])+scalar('sourceCommit',commit)+\
+        scalar('imageRevision','sha256-'+digest[7:][:56])+'image:\n'+\
+        scalar('repository',image_repository,'  ')+scalar('tag',commit,'  ')+\
+        scalar('digest',digest,'  ')+scalar('pullPolicy','IfNotPresent','  ')+'release:\n'+\
+        scalar('schemaVersion','github-v1','  ')+scalar('sourceRepository',repo,'  ')+\
+        scalar('sourceCommit',commit,'  ')+scalar('event','push','  ')+\
+        scalar('ref','refs/heads/main','  ')+scalar('workflowRef',result['workflowRef'],'  ')+\
+        scalar('runId',str(result['runId']),'  ')+scalar('runAttempt',str(result['runAttempt']),'  ')+\
+        scalar('recordUrl',urls['release-record.json'],'  ')+scalar('recordSha256',record_hash,'  ')+\
+        scalar('sbomUrl',urls['sbom.cdx.json'],'  ')+scalar('sbomSha256',result['sbomSha256'],'  ')+\
+        scalar('published',True,'  ')+scalar('strategy',before['strategy'])+\
+        scalar('promotionMode',before['promotionMode'])+scalar('analysisPluginEnabled',before['analysisPluginEnabled'])
+    if 'bootstrapHash' in before:
+        after+=scalar('bootstrapHash',before['bootstrapHash'])
+    require(all((key+': '+json.dumps(before[key],separators=(',',':'))+'\n') in after
+                for key in ('owner','strategy','promotionMode','analysisPluginEnabled')) and
+            ('bootstrapHash' in before)==('bootstrapHash:' in after))
     return after
 
 def proposal_path(service):
@@ -437,13 +453,13 @@ def propose():
     require(api('/repos/'+repo+'/git/ref/heads/main')['object']['sha']==commit)
     service,_,_,_=service_contract(repo,os.environ.get('RELEASE_SERVICE'))
     path=proposal_path(service)
-    result,_,_=release_data(repo,commit,run_id,attempt,service)
+    result,urls,record_hash=release_data(repo,commit,run_id,attempt,service)
     owner=repo.split('/')[0];target=owner+'/application-manifest'
     base=api('/repos/'+target+'/git/ref/heads/main')['object']['sha']
     branch=f'github/{service}-{commit}-{run_id}-{attempt}'
     file=api('/repos/'+target+'/contents/'+path+'?ref='+base)
     before=base64.b64decode(file['content']).decode()
-    after=patch_runtime_profile(before,repo,commit,result)
+    after=patch_runtime_profile(before,repo,commit,result,urls,record_hash)
     api('/repos/'+target+'/git/refs','POST',{'ref':'refs/heads/'+branch,'sha':base})
     api('/repos/'+target+'/contents/'+path,'PUT',{'message':f'Update {service} to checked GitHub image {commit}',
         'content':base64.b64encode(after.encode()).decode(),'sha':file['sha'],'branch':branch,
