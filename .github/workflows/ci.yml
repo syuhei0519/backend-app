@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+# Publication can wait for an owner approval. Keep workflow-level concurrency
+# unset so that wait never serializes the required validation of a later push.
+# The publish job retains its own non-cancelling, per-service concurrency below.
 defaults:
   run:
     shell: bash
