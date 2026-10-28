@@ -156,7 +156,8 @@ class WorkflowPublication(unittest.TestCase):
     def allowed(self):
         return {'cancelled':False,'github.event_name':'push','github.ref':'refs/heads/main',
                 'github.ref_protected':True,'vars.ENABLE_GHCR_PUBLISH':'true',
-                'vars.ENABLE_MANIFEST_PR':'true',**{'needs.'+job+'.result':'success'
+                'vars.ENABLE_MANIFEST_PR':'true','needs.validate.outputs.release':'true',
+                **{'needs.'+job+'.result':'success'
                     for job in ('validate','image','ci-result','publish')}}
 
     def test_full_ci_and_explicit_status(self):
@@ -189,9 +190,13 @@ class WorkflowPublication(unittest.TestCase):
             for key,value in changes:
                 with self.subTest(job=job,key=key,value=value):
                     self.assertFalse(self.accepts(job,{**self.allowed(),key:value}))
+        self.assertFalse(self.accepts('publish',{
+            **self.allowed(),'needs.validate.outputs.release':'false'}))
 
     def test_dependency_environment_and_permission_contract(self):
-        publish=self.block('publish');propose=self.block('propose')
+        validate=self.block('validate');publish=self.block('publish');propose=self.block('propose')
+        self.assertIn('needs: classify',validate)
+        self.assertIn('    outputs:\n      release: ${{ needs.classify.outputs.release }}\n',validate)
         self.assertIn('needs: [validate, image, ci-result]',publish)
         self.assertIn('needs: publish',propose)
         self.assertIn('environment: ghcr-publish',publish)

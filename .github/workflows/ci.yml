@@ -20,6 +20,7 @@ jobs:
     outputs:
       docs: ${{ steps.diff.outputs.docs }}
       base: ${{ steps.diff.outputs.base }}
+      release: ${{ steps.diff.outputs.release }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -47,6 +48,8 @@ jobs:
   validate:
     needs: classify
     if: needs.classify.outputs.docs != 'true'
+    outputs:
+      release: ${{ needs.classify.outputs.release }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -191,6 +194,7 @@ jobs:
     # docs is intentionally skipped on full CI; do not inherit its implicit success().
     if: >-
       !cancelled() &&
+      needs.validate.outputs.release == 'true' &&
       needs.validate.result == 'success' &&
       needs.image.result == 'success' &&
       needs.ci-result.result == 'success' &&
