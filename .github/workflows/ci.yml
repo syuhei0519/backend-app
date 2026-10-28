@@ -48,6 +48,8 @@ jobs:
   validate:
     needs: classify
     if: needs.classify.outputs.docs != 'true'
+    outputs:
+      release: ${{ needs.classify.outputs.release }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -188,12 +190,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   publish:
-    needs: [classify, validate, image, ci-result]
+    needs: [validate, image, ci-result]
     # docs is intentionally skipped on full CI; do not inherit its implicit success().
     if: >-
       !cancelled() &&
-      needs.classify.result == 'success' &&
-      needs.classify.outputs.release == 'true' &&
+      needs.validate.outputs.release == 'true' &&
       needs.validate.result == 'success' &&
       needs.image.result == 'success' &&
       needs.ci-result.result == 'success' &&
