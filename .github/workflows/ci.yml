@@ -20,6 +20,7 @@ jobs:
     outputs:
       docs: ${{ steps.diff.outputs.docs }}
       base: ${{ steps.diff.outputs.base }}
+      release: ${{ steps.diff.outputs.release }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -187,10 +188,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   publish:
-    needs: [validate, image, ci-result]
+    needs: [classify, validate, image, ci-result]
     # docs is intentionally skipped on full CI; do not inherit its implicit success().
     if: >-
       !cancelled() &&
+      needs.classify.result == 'success' &&
+      needs.classify.outputs.release == 'true' &&
       needs.validate.result == 'success' &&
       needs.image.result == 'success' &&
       needs.ci-result.result == 'success' &&

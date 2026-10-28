@@ -156,8 +156,9 @@ class WorkflowPublication(unittest.TestCase):
     def allowed(self):
         return {'cancelled':False,'github.event_name':'push','github.ref':'refs/heads/main',
                 'github.ref_protected':True,'vars.ENABLE_GHCR_PUBLISH':'true',
-                'vars.ENABLE_MANIFEST_PR':'true',**{'needs.'+job+'.result':'success'
-                    for job in ('validate','image','ci-result','publish')}}
+                'vars.ENABLE_MANIFEST_PR':'true','needs.classify.outputs.release':'true',
+                **{'needs.'+job+'.result':'success'
+                    for job in ('classify','validate','image','ci-result','publish')}}
 
     def test_full_ci_and_explicit_status(self):
         # The graph has a skipped docs ancestor. Only test expression semantics;
@@ -170,7 +171,7 @@ class WorkflowPublication(unittest.TestCase):
                 self.assertTrue(self.accepts(job,self.allowed()))
 
     def test_required_results_and_docs_only(self):
-        for job,dependencies in (('publish',('validate','image','ci-result')),('propose',('publish',))):
+        for job,dependencies in (('publish',('classify','validate','image','ci-result')),('propose',('publish',))):
             for dependency in dependencies:
                 for result in ('failure','skipped','cancelled'):
                     with self.subTest(job=job,dependency=dependency,result=result):
@@ -189,10 +190,12 @@ class WorkflowPublication(unittest.TestCase):
             for key,value in changes:
                 with self.subTest(job=job,key=key,value=value):
                     self.assertFalse(self.accepts(job,{**self.allowed(),key:value}))
+        self.assertFalse(self.accepts('publish',{
+            **self.allowed(),'needs.classify.outputs.release':'false'}))
 
     def test_dependency_environment_and_permission_contract(self):
         publish=self.block('publish');propose=self.block('propose')
-        self.assertIn('needs: [validate, image, ci-result]',publish)
+        self.assertIn('needs: [classify, validate, image, ci-result]',publish)
         self.assertIn('needs: publish',propose)
         self.assertIn('environment: ghcr-publish',publish)
         self.assertIn('environment: manifest-update',propose)
