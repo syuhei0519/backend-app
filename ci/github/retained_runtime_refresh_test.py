@@ -57,7 +57,13 @@ class ContextContract(unittest.TestCase):
         workflow = (HERE.parents[1] / ".github/workflows/retained-runtime-refresh.yml").read_text()
         self.assertIn("default: false", workflow)
         self.assertIn("environment: ghcr-publish", workflow)
-        self.assertIn("inputs.publish && vars.ENABLE_GHCR_PUBLISH == 'true'", workflow)
+        self.assertIn(
+            "inputs.publish && vars.ENABLE_RETAINED_ACCOUNT_GHCR_PUBLISH == 'true'",
+            workflow,
+        )
+        self.assertNotIn("vars.ENABLE_GHCR_PUBLISH", workflow)
+        ci_workflow = (HERE.parents[1] / ".github/workflows/ci.yml").read_text()
+        self.assertIn("vars.ENABLE_GHCR_PUBLISH == 'true'", ci_workflow)
         self.assertIn("packages: write", workflow)
         self.assertIn("retained_publish.py", workflow)
         self.assertEqual(rp.MANIFEST, m.IMAGE_DIGEST)
