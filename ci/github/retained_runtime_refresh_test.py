@@ -477,10 +477,11 @@ class WorkflowContract(unittest.TestCase):
         self.assertIn("packages: write", publish)
         self.assertNotIn("kubectl", publish)
 
-    def test_only_metadata_evidence_is_uploaded(self):
+    def test_runtime_evidence_and_verified_root_oci_are_uploaded(self):
         self.assertIn("path: .security/retained-runtime/", self.workflow)
         self.assertIn("if: inputs.publish", self.workflow)
-        self.assertIn("path: .security/private/retained-runtime/.oci/layout/", self.workflow)
+        self.assertIn("path: .oci/layout/", self.workflow)
+        self.assertNotIn("path: .security/private/retained-runtime/.oci/layout/", self.workflow)
 
 
 if __name__ == "__main__":
