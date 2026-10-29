@@ -108,13 +108,14 @@ class ContextContract(unittest.TestCase):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 m.check_context(context_env(), changed)
 
-    def test_static_hashes_and_deadline_are_exact(self):
-        self.assertEqual(m.STATIC_SCANNED_AT, "2026-10-28T05:51:12.94045532Z")
-        self.assertEqual(m.STATIC_VALID_UNTIL, "2026-10-29T01:21:08.391884645Z")
-        self.assertEqual(m.STATIC_EVIDENCE["rawScanSha256"],
-                         "87bed70a5b5b9b8823aee6be88082d908fdca78163d0ff994c92b5a2cd410e3c")
-        for value in m.STATIC_EVIDENCE.values():
-            self.assertRegex(value, r"^[0-9a-f]{64}$")
+    def test_rescan_identity_is_exact_and_has_no_exception_path(self):
+        self.assertEqual(m.TRIVY_VERSION, "0.75.0")
+        self.assertIn("@sha256:", m.TRIVY_IMAGE)
+        self.assertRegex(m.SCAN_POLICY_SHA256, r"^[0-9a-f]{64}$")
+        workflow = (HERE.parents[1] / ".github/workflows/retained-runtime-refresh.yml").read_text()
+        self.assertIn("--input .oci/layout", workflow)
+        self.assertIn("--ignorefile .security/private/retained-rescan/empty-ignore", workflow)
+        self.assertNotIn("--ignore-unfixed", workflow)
 
     def test_checkout_head_must_equal_github_issuer_commit(self):
         result = m.subprocess.CompletedProcess([], 0, stdout="b" * 40 + "\n")
@@ -319,7 +320,8 @@ class IdentityContract(Workdir):
 
 
 class ReceiptContract(Workdir):
-    def setup_inputs(self):
+    def setup_inputs(self, scanned="2026-10-29T16:00:00+00:00",
+                     valid="2026-10-30T16:00:00+00:00"):
         m.PRIVATE.mkdir(parents=True)
         context = m.check_context(context_env(), set(m.FULL_CHANGE_SET))
         metadata = {"context": context, "api": {"sourceJobId": m.SOURCE_JOB_ID,
@@ -331,10 +333,23 @@ class ReceiptContract(Workdir):
                    "digest": m.IMAGE_DIGEST, "network": "internal", "passed": True,
                    "readOnly": True, "service": "backend"}
         Path(".security/public/runtime.json").write_bytes(encoded(runtime))
+        m.RESCAN.mkdir(parents=True)
+        summary = {"schemaVersion": 1, "pass": True, "trivyVersion": m.TRIVY_VERSION,
+                   "dbUpdatedAt": scanned, "scannedAt": scanned, "findings": []}
+        summary_bytes = encoded(summary)
+        (m.RESCAN / "summary.json").write_bytes(summary_bytes)
+        binding = {"schema": "core-platform/retained-image-rescan/v1",
+            "imageDigest": m.IMAGE_DIGEST, "configDigest": m.CONFIG_DIGEST,
+            "scannerImage": m.TRIVY_IMAGE, "trivyVersion": m.TRIVY_VERSION,
+            "scannedAt": scanned, "dbUpdatedAt": scanned, "validUntil": valid,
+            "rawScanSha256": "1" * 64, "safeSummarySha256": m.sha256(summary_bytes),
+            "databaseSha256": "2" * 64, "scanPolicySha256": m.SCAN_POLICY_SHA256,
+            "warningFindingCount": 0}
+        (m.RESCAN / "binding.json").write_bytes(encoded(binding))
 
     def test_receipt_binds_current_issuer_runtime_artifact_and_external_scan(self):
         self.setup_inputs()
-        instant = dt.datetime(2026, 10, 28, 8, 0, tzinfo=dt.timezone.utc)
+        instant = dt.datetime(2026, 10, 29, 16, 5, tzinfo=dt.timezone.utc)
         with mock.patch.object(m, "changed_paths", return_value=set(m.FULL_CHANGE_SET)), \
              mock.patch.object(m, "now", return_value=instant):
             receipt = m.finalize(context_env())
@@ -343,22 +358,22 @@ class ReceiptContract(Workdir):
         self.assertEqual(receipt["image"]["configDigest"], m.CONFIG_DIGEST)
         self.assertTrue(receipt["runtime"]["migrationAndServiceSameImage"])
         self.assertEqual(receipt["runtime"]["producerGitBlobSha1"], m.RUNTIME_BLOB_SHA1)
-        self.assertTrue(receipt["staticScanEvidence"]["externalEvidenceHashReference"])
-        self.assertFalse(receipt["staticScanEvidence"]["evidenceBytesVerifiedByThisWorkflow"])
-        self.assertEqual(receipt["validUntil"], m.STATIC_VALID_UNTIL)
+        self.assertTrue(receipt["freshImageScan"]["evidenceBytesVerifiedByThisWorkflow"])
+        self.assertEqual(receipt["freshImageScan"]["imageDigest"], m.IMAGE_DIGEST)
+        self.assertEqual(receipt["validUntil"], "2026-10-30T16:00:00+00:00")
         self.assertFalse(receipt["published"] or receipt["deploymentAuthorized"])
 
     def test_expired_scan_or_failed_runtime_is_refused(self):
-        self.setup_inputs()
+        self.setup_inputs(valid="2026-10-29T16:00:00+00:00")
         with mock.patch.object(m, "changed_paths", return_value=set(m.FULL_CHANGE_SET)), \
-             mock.patch.object(m, "now", return_value=dt.datetime(2026, 10, 29, 2, tzinfo=dt.timezone.utc)), \
+             mock.patch.object(m, "now", return_value=dt.datetime(2026, 10, 29, 16, 1, tzinfo=dt.timezone.utc)), \
              self.assertRaises(ValueError):
             m.finalize(context_env())
 
     def test_future_dated_scan_binding_is_refused(self):
-        self.setup_inputs()
+        self.setup_inputs(scanned="2026-10-29T16:10:00+00:00")
         with mock.patch.object(m, "changed_paths", return_value=set(m.FULL_CHANGE_SET)), \
-             mock.patch.object(m, "now", return_value=dt.datetime(2026, 10, 28, 5, 50, tzinfo=dt.timezone.utc)), \
+             mock.patch.object(m, "now", return_value=dt.datetime(2026, 10, 29, 16, 5, tzinfo=dt.timezone.utc)), \
              self.assertRaises(ValueError):
             m.finalize(context_env())
 
@@ -367,9 +382,36 @@ class ReceiptContract(Workdir):
         path = Path(".security/public/runtime.json"); value = json.loads(path.read_text()); value["readOnly"] = False
         path.write_bytes(encoded(value))
         with mock.patch.object(m, "changed_paths", return_value=set(m.FULL_CHANGE_SET)), \
-             mock.patch.object(m, "now", return_value=dt.datetime(2026, 10, 28, 8, tzinfo=dt.timezone.utc)), \
+             mock.patch.object(m, "now", return_value=dt.datetime(2026, 10, 29, 16, 5, tzinfo=dt.timezone.utc)), \
              self.assertRaises(ValueError):
             m.finalize(context_env())
+
+
+class FreshScanContract(Workdir):
+    def test_current_db_raw_config_and_safe_summary_are_bound(self):
+        m.RESCAN.mkdir(parents=True)
+        Path(".cache/retained-trivy/db").mkdir(parents=True)
+        Path("security").mkdir()
+        policy = (HERE.parents[1] / "security/scan-policy.json").read_bytes()
+        Path("security/scan-policy.json").write_bytes(policy)
+        instant = dt.datetime(2026, 10, 29, 16, 0, tzinfo=dt.timezone.utc)
+        raw = {"SchemaVersion": 2, "Trivy": {"Version": m.TRIVY_VERSION},
+               "ArtifactType": "container_image", "ArtifactName": ".oci/layout",
+               "Metadata": {"ImageID": m.CONFIG_DIGEST}, "Results": [{"Target": "image"}]}
+        db = {"Version": 2, "UpdatedAt": instant.isoformat()}
+        summary = {"schemaVersion": 1, "pass": True, "trivyVersion": m.TRIVY_VERSION,
+                   "dbUpdatedAt": instant.isoformat(), "scannedAt": instant.isoformat(),
+                   "findings": [{"kind": "vulnerability", "rule": "CVE-1", "path": "image/os",
+                                 "severity": "HIGH", "decision": "warning"}]}
+        (m.RESCAN / "raw.json").write_bytes(encoded(raw))
+        Path(".cache/retained-trivy/db/metadata.json").write_bytes(encoded(db))
+        (m.RESCAN / "summary.json").write_bytes(encoded(summary))
+        with mock.patch.object(m.subprocess, "run", return_value=m.subprocess.CompletedProcess([], 0)), \
+             mock.patch.object(m, "now", return_value=instant + dt.timedelta(minutes=1)):
+            binding = m.bind_scan()
+        self.assertEqual(binding["configDigest"], m.CONFIG_DIGEST)
+        self.assertEqual(binding["warningFindingCount"], 1)
+        self.assertEqual(binding["scanPolicySha256"], m.SCAN_POLICY_SHA256)
 
 
 class WorkflowContract(unittest.TestCase):

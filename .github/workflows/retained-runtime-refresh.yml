@@ -39,6 +39,20 @@ jobs:
         run: |
           mkdir -p .security
           (cd tools/oci-input; CGO_ENABLED=0 go build -trimpath -o ../../.security/oci-runtime-export ./cmd/oci-runtime-export)
+          go build -trimpath -o .security/scan-gate ./tools/scan-gate
+      - name: Rescan the exact retained OCI with a current database
+        run: |
+          mkdir -p .cache/retained-trivy .security/private/retained-rescan
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work --entrypoint sh \
+            aquasec/trivy:0.75.0@sha256:9db099105405c648166e6b94155eb32f8da12673cf1f455207f7385cc9a77283 -ec '
+              trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db:2 --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --cache-dir .cache/retained-trivy --timeout 5m --quiet > .security/private/retained-rescan/db.log 2>&1
+              : > .security/private/retained-rescan/empty-ignore
+              trivy image --input .oci/layout --cache-dir .cache/retained-trivy --skip-db-update --timeout 5m --quiet --no-progress \
+                --scanners vuln,secret,misconfig --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+                --ignorefile .security/private/retained-rescan/empty-ignore --list-all-pkgs --format json \
+                --output .security/private/retained-rescan/raw.json > .security/private/retained-rescan/scan.log 2>&1
+            '
+          python3 -I ci/github/retained_runtime_refresh.py bind-scan
       - name: Re-run the unchanged isolated runtime contract
         env:
           RELEASE_SERVICE: backend
