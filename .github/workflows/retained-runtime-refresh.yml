@@ -72,7 +72,7 @@ jobs:
         if: inputs.publish
         with:
           name: retained-account-oci-${{ github.run_attempt }}
-          path: .security/private/retained-runtime/.oci/layout/
+          path: .oci/layout/
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
