@@ -39,7 +39,7 @@ jobs:
         run: |
           mkdir -p .security
           (cd tools/oci-input; CGO_ENABLED=0 go build -trimpath -o ../../.security/oci-runtime-export ./cmd/oci-runtime-export)
-          go build -trimpath -o .security/scan-gate ./tools/scan-gate
+          (cd tools/scan-gate; go build -trimpath -o ../../.security/scan-gate .)
       - name: Rescan the exact retained OCI with a current database
         run: |
           mkdir -p .cache/retained-trivy .security/private/retained-rescan

@@ -116,6 +116,8 @@ class ContextContract(unittest.TestCase):
         self.assertIn("--input .oci/layout", workflow)
         self.assertIn("--ignorefile .security/private/retained-rescan/empty-ignore", workflow)
         self.assertNotIn("--ignore-unfixed", workflow)
+        self.assertIn("(cd tools/scan-gate; go build -trimpath -o ../../.security/scan-gate .)", workflow)
+        self.assertNotIn("go build -trimpath -o .security/scan-gate ./tools/scan-gate", workflow)
 
     def test_checkout_head_must_equal_github_issuer_commit(self):
         result = m.subprocess.CompletedProcess([], 0, stdout="b" * 40 + "\n")
