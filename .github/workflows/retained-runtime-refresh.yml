@@ -1,11 +1,18 @@
-# 固定済み GitHub artifact の Account OCI だけを、公開せず隔離再実行します。
+# 固定済み GitHub artifact の Account OCI を隔離再検証し、明示承認時だけGHCRへ公開します。
 name: Retained Account runtime refresh
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 検証済みの固定OCIをGHCRへ公開する
+        required: true
+        default: false
+        type: boolean
 permissions:
   contents: read
   actions: read
 concurrency:
+  # 単独操作者のdispatchを直列化する。GHCR外部主体との原子的create-if-absent保証ではない。
   group: retained-account-runtime-refresh
   cancel-in-progress: false
 defaults:
@@ -47,3 +54,41 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: inputs.publish
+        with:
+          name: retained-account-oci-${{ github.run_attempt }}
+          path: .security/private/retained-runtime/.oci/layout/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+  publish:
+    needs: runtime
+    if: inputs.publish && vars.ENABLE_GHCR_PUBLISH == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: ghcr-publish
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: retained-account-oci-${{ github.run_attempt }}
+          path: retained
+      - name: Publish only the exact canonical retained OCI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          go install github.com/google/go-containerregistry/cmd/crane@v0.21.7
+          (cd tools/oci-input; go build -o ../../oci-layout-push ./cmd/oci-layout-push)
+          echo "$PWD" >> "$GITHUB_PATH"
+          printf '%s' "$GH_TOKEN" | crane auth login ghcr.io -u '${{ github.actor }}' --password-stdin
+          PATH="$PWD:$PATH" python3 -I ci/github/retained_publish.py retained

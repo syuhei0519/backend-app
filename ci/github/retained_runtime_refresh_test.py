@@ -17,6 +17,8 @@ HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("retained_runtime_refresh", HERE / "retained_runtime_refresh.py")
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+publish_spec = importlib.util.spec_from_file_location("retained_publish", HERE / "retained_publish.py")
+rp = importlib.util.module_from_spec(publish_spec); publish_spec.loader.exec_module(rp)
 
 
 def encoded(value):
@@ -50,6 +52,34 @@ class ContextContract(unittest.TestCase):
         result = m.check_context(context_env(), set(m.FULL_CHANGE_SET))
         self.assertEqual(result["runId"], 500)
         self.assertEqual(result["workflowCommit"], "a" * 40)
+
+    def test_publish_is_opt_in_and_exact_digest(self):
+        workflow = (HERE.parents[1] / ".github/workflows/retained-runtime-refresh.yml").read_text()
+        self.assertIn("default: false", workflow)
+        self.assertIn("environment: ghcr-publish", workflow)
+        self.assertIn("inputs.publish && vars.ENABLE_GHCR_PUBLISH == 'true'", workflow)
+        self.assertIn("packages: write", workflow)
+        self.assertIn("retained_publish.py", workflow)
+        self.assertEqual(rp.MANIFEST, m.IMAGE_DIGEST)
+
+    def test_publish_tag_state_is_fail_closed(self):
+        result = lambda code=0, out="", err="": m.subprocess.CompletedProcess([], code, out, err)
+        self.assertEqual(rp.state(result(out=rp.MANIFEST)), "same")
+        self.assertEqual(rp.state(result(1, err="MANIFEST_UNKNOWN")), "absent")
+        for value in (result(out="sha256:" + "0" * 64), result(1, err="DENIED"),
+                      result(1, err="MANIFEST_UNKNOWN unauthorized"), result(1, err="timeout")):
+            with self.assertRaises(rp.PublishError): rp.state(value)
+
+    def test_failed_registry_write_is_not_retried(self):
+        responses = iter([m.subprocess.CompletedProcess([], 0, "", ""),
+            m.subprocess.CompletedProcess([], 1, "", "MANIFEST_UNKNOWN"),
+            m.subprocess.CompletedProcess([], 1, "", "MANIFEST_UNKNOWN"),
+            m.subprocess.CompletedProcess([], 1, "", "uncertain")])
+        calls = []
+        def fake(args, secret=None): calls.append(args); return next(responses)
+        with mock.patch.object(rp, "run", side_effect=fake), mock.patch.dict(os.environ, {"GITHUB_ACTOR":"actor", "GH_TOKEN":"token"}), self.assertRaises(rp.PublishError):
+            rp.publish("layout")
+        self.assertEqual(sum(call[0] == "oci-layout-push" for call in calls), 1)
 
     def test_context_refusals(self):
         mutations = {
@@ -349,16 +379,20 @@ class WorkflowContract(unittest.TestCase):
         for use in [line.split("uses:", 1)[1].strip() for line in self.workflow.splitlines() if "uses:" in line]:
             self.assertRegex(use, r"@[0-9a-f]{40}$")
 
-    def test_runtime_only_no_build_publish_or_deploy(self):
-        self.assertIn("python3 -I ci/github/runtime.py", self.workflow)
-        self.assertIn("docker pull postgres@sha256:9b18b783", self.workflow)
+    def test_runtime_has_no_publish_or_deploy_permissions(self):
+        runtime, publish = self.workflow.split("\n  publish:\n    needs: runtime", 1)
+        self.assertIn("python3 -I ci/github/runtime.py", runtime)
+        self.assertIn("docker pull postgres@sha256:9b18b783", runtime)
         for forbidden in ("docker build", "docker push", "release.py publish", "kubectl", "gh pr", "packages: write"):
-            self.assertNotIn(forbidden, self.workflow)
-        self.assertIn("retained_runtime_refresh.py finalize", self.workflow)
+            self.assertNotIn(forbidden, runtime)
+        self.assertIn("retained_runtime_refresh.py finalize", runtime)
+        self.assertIn("packages: write", publish)
+        self.assertNotIn("kubectl", publish)
 
     def test_only_metadata_evidence_is_uploaded(self):
         self.assertIn("path: .security/retained-runtime/", self.workflow)
-        self.assertNotIn("path: .oci", self.workflow)
+        self.assertIn("if: inputs.publish", self.workflow)
+        self.assertIn("path: .security/private/retained-runtime/.oci/layout/", self.workflow)
 
 
 if __name__ == "__main__":

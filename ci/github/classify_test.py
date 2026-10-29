@@ -95,6 +95,19 @@ class ClassifyTests(unittest.TestCase):
         result = self.classify(root, "push", "refs/heads/main", base)
         self.assertEqual(result["release"], "false")
 
+    def test_retained_manual_publish_helpers_are_non_automatic(self):
+        root, base = self.repository_changes({
+            ".github/workflows/retained-runtime-refresh.yml": "name: retained\n",
+            "ci/github/retained_publish.py": "# reviewed registry state machine\n",
+            "ci/github/retained_runtime_refresh.py": "# retained verifier\n",
+            "ci/github/retained_runtime_refresh_test.py": "# tests\n",
+            "tools/oci-input/cmd/oci-layout-push/main.go": "package main\n",
+            "ci/github/classify.py": "# exact classifier gate change\n",
+            "ci/github/classify_test.py": "# classifier tests\n",
+        })
+        result = self.classify(root, "push", "refs/heads/main", base)
+        self.assertEqual(result["release"], "false")
+
     def test_retained_consumer_plus_source_is_publishable(self):
         root, base = self.repository_changes(
             {

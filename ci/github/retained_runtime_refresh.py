@@ -46,6 +46,8 @@ FULL_CHANGE_SET = {
     "ci/github/release_test.py",
     "ci/github/retained_runtime_refresh.py",
     "ci/github/retained_runtime_refresh_test.py",
+    "ci/github/retained_publish.py",
+    "tools/oci-input/cmd/oci-layout-push/main.go",
 }
 EXPECTED_MEMBERS = {
     ".oci/image.tar": (15409664, ARCHIVE_SHA256),
