@@ -83,10 +83,48 @@ class ContextContract(unittest.TestCase):
             m.subprocess.CompletedProcess([], 1, "", "uncertain")])
         calls = []
         def fake(args, secret=None): calls.append(args); return next(responses)
-        with mock.patch.object(rp, "run", side_effect=fake), mock.patch.dict(os.environ, {"GITHUB_ACTOR":"actor", "GH_TOKEN":"token"}), self.assertRaises(rp.PublishError):
-            rp.publish("layout")
+        with mock.patch.object(rp, "run", side_effect=fake), mock.patch.object(rp, "validate_receipt"), \
+             mock.patch.dict(os.environ, {"GITHUB_ACTOR":"actor", "GH_TOKEN":"token"}), self.assertRaises(rp.PublishError):
+            rp.publish("layout", "receipt")
         self.assertEqual(sum(call[0] == "oci-layout-push" for call in calls), 1)
 
+    def test_publish_revalidates_same_run_receipt_before_registry(self):
+        workflow = (HERE.parents[1] / ".github/workflows/retained-runtime-refresh.yml").read_text()
+        self.assertIn("retained-account-runtime-${{ github.run_attempt }}", workflow)
+        self.assertIn("retained_publish.py retained evidence/receipt.json", workflow)
+
+
+class PublishReceiptContract(Workdir):
+    def fixture(self, valid_until="2026-10-30T16:00:00+00:00"):
+        layout = Path("layout/blobs/sha256"); layout.mkdir(parents=True)
+        Path("layout/index.json").write_bytes(encoded({"manifests": [{"digest": rp.MANIFEST}]}))
+        (layout / rp.MANIFEST[7:]).write_bytes(encoded({"config": {"digest": rp.CONFIG}}))
+        receipt = {"schema": "core-platform/retained-runtime-refresh/v1", "published": False,
+            "deploymentAuthorized": False, "image": {"imageDigest": rp.MANIFEST, "configDigest": rp.CONFIG},
+            "validUntil": valid_until, "freshImageScan": {"imageDigest": rp.MANIFEST,
+                "configDigest": rp.CONFIG, "status": "scanned-policy-passed",
+                "evidenceBytesVerifiedByThisWorkflow": True,
+                "scannedAt": "2026-10-29T16:00:00+00:00", "validUntil": valid_until}}
+        Path("receipt.json").write_bytes(encoded(receipt))
+        return receipt
+
+    def test_valid_receipt_and_layout_are_accepted(self):
+        self.fixture()
+        rp.validate_receipt("layout", "receipt.json", dt.datetime(2026, 10, 29, 16, 5, tzinfo=dt.timezone.utc))
+
+    def test_expired_receipt_stops_before_registry(self):
+        self.fixture(valid_until="2026-10-29T16:04:00+00:00")
+        with self.assertRaises(rp.PublishError):
+            rp.validate_receipt("layout", "receipt.json", dt.datetime(2026, 10, 29, 16, 5, tzinfo=dt.timezone.utc))
+
+    def test_receipt_or_layout_identity_mismatch_is_refused(self):
+        receipt = self.fixture(); receipt["freshImageScan"]["configDigest"] = "sha256:" + "0" * 64
+        Path("receipt.json").write_bytes(encoded(receipt))
+        with self.assertRaises(rp.PublishError):
+            rp.validate_receipt("layout", "receipt.json", dt.datetime(2026, 10, 29, 16, 5, tzinfo=dt.timezone.utc))
+
+
+class ContextBoundaryContract(unittest.TestCase):
     def test_context_refusals(self):
         mutations = {
             "GITHUB_REPOSITORY": "other/backend-app",
