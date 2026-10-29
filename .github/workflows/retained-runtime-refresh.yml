@@ -63,7 +63,7 @@ jobs:
           retention-days: 1
   publish:
     needs: runtime
-    if: inputs.publish
+    if: inputs.publish && vars.ENABLE_GHCR_PUBLISH == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: ghcr-publish

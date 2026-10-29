@@ -55,6 +55,7 @@ class ContextContract(unittest.TestCase):
         workflow = (HERE.parents[1] / ".github/workflows/retained-runtime-refresh.yml").read_text()
         self.assertIn("default: false", workflow)
         self.assertIn("environment: ghcr-publish", workflow)
+        self.assertIn("inputs.publish && vars.ENABLE_GHCR_PUBLISH == 'true'", workflow)
         self.assertIn("packages: write", workflow)
         self.assertIn("destination tag already exists; overwrite refused", workflow)
         self.assertIn(m.IMAGE_DIGEST, workflow)
