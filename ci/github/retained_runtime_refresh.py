@@ -35,8 +35,10 @@ CONFIG_DIGEST = "sha256:ef442084e2b900ce842504ab5b05f2ae21dbb334ecf6295e70037dbb
 RUNTIME_BLOB_SHA1 = "39ef9b01266b553978989d376aa7a7fcc5d9de7d"
 RELEASE_BLOB_SHA1 = "a02b05e4e7fb4b78e56b5bc693aed3db80bf012e"
 WORKFLOW_REF = REPOSITORY + "/.github/workflows/retained-runtime-refresh.yml@refs/heads/main"
-STATIC_VALID_UNTIL = "2026-10-29T01:21:08.391884645Z"
-STATIC_SCANNED_AT = "2026-10-28T05:51:12.94045532Z"
+TRIVY_VERSION = "0.75.0"
+TRIVY_IMAGE = "aquasec/trivy:0.75.0@sha256:9db099105405c648166e6b94155eb32f8da12673cf1f455207f7385cc9a77283"
+SCAN_POLICY_SHA256 = "d10f26ad064971e74b94f821560ede5303f0bcf4d364ea2514c45faac4c27337"
+HISTORICAL_SCAN_VALID_UNTIL = "2026-10-29T01:21:08.391884645Z"
 
 FULL_CHANGE_SET = {
     ".github/workflows/ci.yml",
@@ -62,21 +64,11 @@ EXPECTED_MEMBERS = {
     ".security/public/source-identity.json": (228, "a0e5343f50b4712f2ccbee35cbfcd0f0818b77481d7fe715663e384594f2356c"),
     ".security/public/source-scan.json": (1249, "6996b8da79224bce87a9bd035eabacd482d3d3ddade5a67a67d00b2f6f7ed31c"),
 }
-STATIC_EVIDENCE = {
-    "accountStatusSha256": "e171ec105070e49e2117ae1253696098241dd364193aede2cc4e0d0bb548eecd",
-    "combinedRunSummarySha256": "0ff411c7a77b25c3a08a42ee2f472cf3aebeb4090afcda7cb3d6d63a5e89e778",
-    "rawScanSha256": "87bed70a5b5b9b8823aee6be88082d908fdca78163d0ff994c92b5a2cd410e3c",
-    "safeSummarySha256": "b8df2841f36c9c40348f7e1b0d4797f434708d4d352ee1744d35d002b8130af1",
-    "sbomSha256": "33f8cd4aa87ce5d67af34d4f5eef8a3ef835b99a48a5dc9d6f30eb82ce2baa6d",
-    "trivySha256": "93f9da8e4ba5e0c1c76d8234ed2494cf9afb0a96fd21953e424bb795f3299b8e",
-    "databaseSha256": "e68b667c74000c274351566d7bce26de2022f7937e4cc6e2787e2dbdac96e978",
-    "scanGateSha256": "418d630a4428e8cd65ac0b51b5e020024cd4c1b70b946ecb021533fbef364a26",
-    "scanPolicySha256": "d10f26ad064971e74b94f821560ede5303f0bcf4d364ea2514c45faac4c27337",
-}
 HEX40 = re.compile(r"[0-9a-f]{40}")
 HEX64 = re.compile(r"[0-9a-f]{64}")
 PRIVATE = Path(".security/private/retained-runtime")
 PUBLIC = Path(".security/retained-runtime")
+RESCAN = Path(".security/private/retained-rescan")
 
 
 def require(value: object, message: str = "retained runtime contract refused") -> None:
@@ -304,7 +296,7 @@ def validate_artifact_identity(root: Path) -> None:
     require(release["deploymentAuthorized"] is False and release["isolatedRuntimePassed"] is True)
     # Historical scan/runtime bytes establish artifact provenance only; they are
     # deliberately not treated as current evidence.
-    require(timestamp(release["validUntil"]) < timestamp(STATIC_VALID_UNTIL))
+    require(timestamp(release["validUntil"]) < timestamp(HISTORICAL_SCAN_VALID_UNTIL))
 
     oci = root / ".oci/layout"
     index = decode((oci / "index.json").read_bytes())
@@ -320,7 +312,6 @@ def validate_artifact_identity(root: Path) -> None:
 
 def prepare(api: GitHubAPI, env: dict[str, str] | None = None) -> None:
     env = dict(os.environ if env is None else env)
-    require(now() < timestamp(STATIC_VALID_UNTIL), "fresh static scan binding expired")
     context = check_context(env, changed_paths(env.get("GITHUB_SHA")))
     validate_source_files()
     api_details = validate_api_metadata(api, context)
@@ -343,11 +334,52 @@ def prepare(api: GitHubAPI, env: dict[str, str] | None = None) -> None:
     (PRIVATE / "metadata.json").write_text(json.dumps(metadata, sort_keys=True) + "\n")
 
 
+def bind_scan() -> dict[str, object]:
+    raw_path = RESCAN / "raw.json"
+    db_path = Path(".cache/retained-trivy/db/metadata.json")
+    summary_path = RESCAN / "summary.json"
+    policy_path = Path("security/scan-policy.json")
+    for path in (raw_path, db_path, policy_path):
+        require(path.is_file() and path.stat().st_size <= 32 * 1024 * 1024, "fresh scan input unavailable")
+    require(sha256(policy_path.read_bytes()) == SCAN_POLICY_SHA256, "scan policy identity refused")
+    result = subprocess.run([".security/scan-gate", "-policy", str(policy_path), "-db", str(db_path),
+        "-report", str(raw_path), "-out", str(summary_path), "-scanner-exit", "0",
+        "-image-config", CONFIG_DIGEST], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    require(result.returncode == 0, "fresh scan policy rejected")
+    raw, db, summary = decode(raw_path.read_bytes()), decode(db_path.read_bytes()), decode(summary_path.read_bytes())
+    require(raw["SchemaVersion"] == 2 and raw["Trivy"]["Version"] == TRIVY_VERSION)
+    require(raw["ArtifactType"] == "container_image" and raw["ArtifactName"] == ".oci/layout")
+    require(raw["Metadata"]["ImageID"] == CONFIG_DIGEST and raw["Results"])
+    require(db["Version"] == 2)
+    require(summary["schemaVersion"] == 1 and summary["pass"] is True)
+    require(summary["trivyVersion"] == TRIVY_VERSION and isinstance(summary["findings"], list))
+    require(all(item["decision"] == "warning" for item in summary["findings"]))
+    instant, scanned, db_updated = now(), timestamp(summary["scannedAt"]), timestamp(summary["dbUpdatedAt"])
+    require(db_updated == timestamp(db["UpdatedAt"]) and db_updated <= instant and scanned <= instant)
+    require(instant - scanned < dt.timedelta(minutes=10) and instant - db_updated < dt.timedelta(hours=24))
+    valid_until = min(scanned + dt.timedelta(hours=24), db_updated + dt.timedelta(hours=24))
+    binding = {"schema": "core-platform/retained-image-rescan/v1", "imageDigest": IMAGE_DIGEST,
+        "configDigest": CONFIG_DIGEST, "scannerImage": TRIVY_IMAGE, "trivyVersion": TRIVY_VERSION,
+        "scannedAt": summary["scannedAt"], "dbUpdatedAt": summary["dbUpdatedAt"],
+        "validUntil": valid_until.isoformat(), "rawScanSha256": sha256(raw_path.read_bytes()),
+        "safeSummarySha256": sha256(summary_path.read_bytes()), "databaseSha256": sha256(db_path.read_bytes()),
+        "scanPolicySha256": SCAN_POLICY_SHA256, "warningFindingCount": len(summary["findings"])}
+    (RESCAN / "binding.json").write_text(json.dumps(binding, sort_keys=True) + "\n")
+    return binding
+
+
 def finalize(env: dict[str, str] | None = None) -> dict[str, object]:
     env = dict(os.environ if env is None else env)
     instant = now()
-    require(timestamp(STATIC_SCANNED_AT) <= instant < timestamp(STATIC_VALID_UNTIL),
-            "fresh static scan binding is future-dated or expired")
+    binding = decode((RESCAN / "binding.json").read_bytes())
+    summary_bytes = (RESCAN / "summary.json").read_bytes()
+    require(binding["schema"] == "core-platform/retained-image-rescan/v1")
+    require(binding["imageDigest"] == IMAGE_DIGEST and binding["configDigest"] == CONFIG_DIGEST)
+    require(binding["scannerImage"] == TRIVY_IMAGE and binding["trivyVersion"] == TRIVY_VERSION)
+    require(binding["safeSummarySha256"] == sha256(summary_bytes))
+    require(binding["scanPolicySha256"] == SCAN_POLICY_SHA256)
+    require(timestamp(binding["scannedAt"]) <= instant < timestamp(binding["validUntil"]),
+            "fresh image scan binding is future-dated or expired")
     metadata = decode((PRIVATE / "metadata.json").read_bytes())
     context = check_context(env, changed_paths(env.get("GITHUB_SHA")))
     require(metadata["context"] == context)
@@ -371,24 +403,25 @@ def finalize(env: dict[str, str] | None = None) -> dict[str, object]:
             "producerGitBlobSha1": RUNTIME_BLOB_SHA1,
             "passed": True, "readOnly": True, "capDrop": "ALL", "network": "internal",
             "migrationAndServiceSameImage": True, "restartReadinessPassed": True},
-        "staticScanEvidence": {**STATIC_EVIDENCE, "status": "scanned-policy-passed",
-            "scannedAt": STATIC_SCANNED_AT, "validUntil": STATIC_VALID_UNTIL,
-            "externalEvidenceHashReference": True, "evidenceBytesVerifiedByThisWorkflow": False,
-            "warningFindingCount": 5},
-        "createdAt": instant.isoformat(), "validUntil": STATIC_VALID_UNTIL,
+        "freshImageScan": {**binding, "status": "scanned-policy-passed",
+            "evidenceBytesVerifiedByThisWorkflow": True},
+        "createdAt": instant.isoformat(), "validUntil": binding["validUntil"],
         "published": False, "deploymentAuthorized": False,
     }
     PUBLIC.mkdir(parents=True, exist_ok=False)
     (PUBLIC / "runtime.json").write_bytes(runtime_bytes)
+    (PUBLIC / "image-scan.json").write_bytes(summary_bytes)
     (PUBLIC / "receipt.json").write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
     return receipt
 
 
 def main() -> None:
-    require(len(sys.argv) == 2 and sys.argv[1] in ("prepare", "finalize"))
+    require(len(sys.argv) == 2 and sys.argv[1] in ("prepare", "bind-scan", "finalize"))
     try:
         if sys.argv[1] == "prepare":
             prepare(GitHubAPI(os.environ.get("GITHUB_TOKEN", "")))
+        elif sys.argv[1] == "bind-scan":
+            bind_scan()
         else:
             finalize()
     except Exception:
