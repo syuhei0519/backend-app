@@ -51,6 +51,14 @@ class ContextContract(unittest.TestCase):
         self.assertEqual(result["runId"], 500)
         self.assertEqual(result["workflowCommit"], "a" * 40)
 
+    def test_publish_is_opt_in_and_exact_digest(self):
+        workflow = (HERE.parents[1] / ".github/workflows/retained-runtime-refresh.yml").read_text()
+        self.assertIn("default: false", workflow)
+        self.assertIn("environment: ghcr-publish", workflow)
+        self.assertIn("packages: write", workflow)
+        self.assertIn("destination tag already exists; overwrite refused", workflow)
+        self.assertIn(m.IMAGE_DIGEST, workflow)
+
     def test_context_refusals(self):
         mutations = {
             "GITHUB_REPOSITORY": "other/backend-app",
@@ -349,16 +357,20 @@ class WorkflowContract(unittest.TestCase):
         for use in [line.split("uses:", 1)[1].strip() for line in self.workflow.splitlines() if "uses:" in line]:
             self.assertRegex(use, r"@[0-9a-f]{40}$")
 
-    def test_runtime_only_no_build_publish_or_deploy(self):
-        self.assertIn("python3 -I ci/github/runtime.py", self.workflow)
-        self.assertIn("docker pull postgres@sha256:9b18b783", self.workflow)
+    def test_runtime_has_no_publish_or_deploy_permissions(self):
+        runtime, publish = self.workflow.split("\n  publish:\n    needs: runtime", 1)
+        self.assertIn("python3 -I ci/github/runtime.py", runtime)
+        self.assertIn("docker pull postgres@sha256:9b18b783", runtime)
         for forbidden in ("docker build", "docker push", "release.py publish", "kubectl", "gh pr", "packages: write"):
-            self.assertNotIn(forbidden, self.workflow)
-        self.assertIn("retained_runtime_refresh.py finalize", self.workflow)
+            self.assertNotIn(forbidden, runtime)
+        self.assertIn("retained_runtime_refresh.py finalize", runtime)
+        self.assertIn("packages: write", publish)
+        self.assertNotIn("kubectl", publish)
 
     def test_only_metadata_evidence_is_uploaded(self):
         self.assertIn("path: .security/retained-runtime/", self.workflow)
-        self.assertNotIn("path: .oci", self.workflow)
+        self.assertIn("if: inputs.publish", self.workflow)
+        self.assertIn("path: .security/private/retained-runtime/.oci/image.tar", self.workflow)
 
 
 if __name__ == "__main__":
