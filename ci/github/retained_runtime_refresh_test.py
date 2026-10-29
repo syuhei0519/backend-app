@@ -17,6 +17,8 @@ HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("retained_runtime_refresh", HERE / "retained_runtime_refresh.py")
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+publish_spec = importlib.util.spec_from_file_location("retained_publish", HERE / "retained_publish.py")
+rp = importlib.util.module_from_spec(publish_spec); publish_spec.loader.exec_module(rp)
 
 
 def encoded(value):
@@ -57,8 +59,27 @@ class ContextContract(unittest.TestCase):
         self.assertIn("environment: ghcr-publish", workflow)
         self.assertIn("inputs.publish && vars.ENABLE_GHCR_PUBLISH == 'true'", workflow)
         self.assertIn("packages: write", workflow)
-        self.assertIn("destination tag already exists; overwrite refused", workflow)
-        self.assertIn(m.IMAGE_DIGEST, workflow)
+        self.assertIn("retained_publish.py", workflow)
+        self.assertEqual(rp.MANIFEST, m.IMAGE_DIGEST)
+
+    def test_publish_tag_state_is_fail_closed(self):
+        result = lambda code=0, out="", err="": m.subprocess.CompletedProcess([], code, out, err)
+        self.assertEqual(rp.state(result(out=rp.MANIFEST)), "same")
+        self.assertEqual(rp.state(result(1, err="MANIFEST_UNKNOWN")), "absent")
+        for value in (result(out="sha256:" + "0" * 64), result(1, err="DENIED"),
+                      result(1, err="MANIFEST_UNKNOWN unauthorized"), result(1, err="timeout")):
+            with self.assertRaises(rp.PublishError): rp.state(value)
+
+    def test_failed_registry_write_is_not_retried(self):
+        responses = iter([m.subprocess.CompletedProcess([], 0, "", ""),
+            m.subprocess.CompletedProcess([], 1, "", "MANIFEST_UNKNOWN"),
+            m.subprocess.CompletedProcess([], 1, "", "MANIFEST_UNKNOWN"),
+            m.subprocess.CompletedProcess([], 1, "", "uncertain")])
+        calls = []
+        def fake(args, secret=None): calls.append(args); return next(responses)
+        with mock.patch.object(rp, "run", side_effect=fake), mock.patch.dict(os.environ, {"GITHUB_ACTOR":"actor", "GH_TOKEN":"token"}), self.assertRaises(rp.PublishError):
+            rp.publish("layout")
+        self.assertEqual(sum(call[0] == "oci-layout-push" for call in calls), 1)
 
     def test_context_refusals(self):
         mutations = {
@@ -371,7 +392,7 @@ class WorkflowContract(unittest.TestCase):
     def test_only_metadata_evidence_is_uploaded(self):
         self.assertIn("path: .security/retained-runtime/", self.workflow)
         self.assertIn("if: inputs.publish", self.workflow)
-        self.assertIn("path: .security/private/retained-runtime/.oci/image.tar", self.workflow)
+        self.assertIn("path: .security/private/retained-runtime/.oci/layout/", self.workflow)
 
 
 if __name__ == "__main__":

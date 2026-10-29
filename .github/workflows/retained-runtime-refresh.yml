@@ -12,6 +12,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
+  # 単独操作者のdispatchを直列化する。GHCR外部主体との原子的create-if-absent保証ではない。
   group: retained-account-runtime-refresh
   cancel-in-progress: false
 defaults:
@@ -57,7 +58,7 @@ jobs:
         if: inputs.publish
         with:
           name: retained-account-oci-${{ github.run_attempt }}
-          path: .security/private/retained-runtime/.oci/image.tar
+          path: .security/private/retained-runtime/.oci/layout/
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
@@ -71,6 +72,9 @@ jobs:
       contents: read
       packages: write
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version: '1.27.3'
@@ -82,14 +86,9 @@ jobs:
       - name: Publish only the exact canonical retained OCI
         env:
           GH_TOKEN: ${{ github.token }}
-          DESTINATION: ghcr.io/syuhei0519/backend-app:source-635814f5354f
-          EXPECTED_DIGEST: sha256:fba8eae42982a0e818581b2ac6b41ba865920dafdbfd7d48c416f98c5b1eaebd
         run: |
           go install github.com/google/go-containerregistry/cmd/crane@v0.21.7
+          (cd tools/oci-input; go build -o ../../oci-layout-push ./cmd/oci-layout-push)
+          echo "$PWD" >> "$GITHUB_PATH"
           printf '%s' "$GH_TOKEN" | crane auth login ghcr.io -u '${{ github.actor }}' --password-stdin
-          if crane manifest "$DESTINATION" >/dev/null 2>&1; then
-            echo 'destination tag already exists; overwrite refused' >&2
-            exit 1
-          fi
-          crane push retained/image.tar "$DESTINATION"
-          test "$(crane digest "$DESTINATION")" = "$EXPECTED_DIGEST"
+          PATH="$PWD:$PATH" python3 -I ci/github/retained_publish.py retained
