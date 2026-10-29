@@ -47,4 +47,3 @@ func fail() {
 	fmt.Fprintln(os.Stderr, "registry write failed or outcome uncertain")
 	os.Exit(1)
 }
-
