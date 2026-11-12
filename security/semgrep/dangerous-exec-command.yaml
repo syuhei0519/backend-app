@@ -60,3 +60,7 @@ rules:
     impact: HIGH
   severity: ERROR
   languages: [go]
+  # PLAT-237: 検出 20 件はすべて *_test.go の試験ハーネス。イメージに含まれないコードは対象外にし、本体コードは enforce で止める。
+  paths:
+    exclude:
+      - "*_test.go"
